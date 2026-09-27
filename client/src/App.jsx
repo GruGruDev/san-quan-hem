@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import io from "socket.io-client";
 
 // Import Constants
@@ -23,7 +23,7 @@ import GuideModal from "./components/Modals/GuideModal";
 import LeaderboardModal from "./components/Modals/LeaderboardModal";
 import SettingsModal from "./components/Modals/SettingsModal";
 
-// Kết nối Socket.IO tới Server
+// Kết nối Socket.IO tới Server Production
 const socket = io("https://san-quan-hem-backend.onrender.com", {
   autoConnect: false,
 });
@@ -40,6 +40,12 @@ export default function App() {
   const [showTaunt, setShowTaunt] = useState(true);
   const [vibrate, setVibrate] = useState(true);
 
+  // Ref giữ cài đặt âm thanh mới nhất cho Socket Listener mà KHÔNG làm re-connect socket
+  const soundRef = useRef({ soundEnabled, sfxVolume });
+  useEffect(() => {
+    soundRef.current = { soundEnabled, sfxVolume };
+  }, [soundEnabled, sfxVolume]);
+
   // --- STATES QUẢN LÝ GAME ---
   const [appLoading, setAppLoading] = useState(true);
   const [searching, setSearching] = useState(false);
@@ -51,29 +57,27 @@ export default function App() {
 
   // Management State cho Setup & Bàn cờ
   const [selectedShop, setSelectedShop] = useState(SHOPS[0]?.id || "cavien");
-  const [orientation, setOrientation] = useState("HORIZONTAL"); // 'HORIZONTAL' | 'VERTICAL'
+  const [orientation, setOrientation] = useState("HORIZONTAL");
   const [previewIndex, setPreviewIndex] = useState(null);
   const [myBoard, setMyBoard] = useState(Array(64).fill(null));
-  const [opponentHits, setOpponentHits] = useState(Array(64).fill(null)); // null | 'HIT' | 'MISS'
+  const [opponentHits, setOpponentHits] = useState(Array(64).fill(null));
 
   // Turn & Shot status
   const [isMyTurn, setIsMyTurn] = useState(false);
-  const [coinFlipResult, setCoinFlipResult] = useState(null); // 'FIRST' | 'SECOND' | null
-  const [recentShot, setRecentShot] = useState(null); // { index: number, type: 'HIT'|'MISS'|'SUNK', text: string }
+  const [coinFlipResult, setCoinFlipResult] = useState(null);
+  const [recentShot, setRecentShot] = useState(null);
   const [winner, setWinner] = useState(null);
 
   // Đếm ngược 20 giây cho mỗi lượt
   const [turnTimeLeft, setTurnTimeLeft] = useState(20);
 
-  // Chat & Sound state
+  // Chat & Modals state
   const [messages, setMessages] = useState([]);
-
-  // Modals state
   const [showSettings, setShowSettings] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
 
-  // --- TỰ ĐỘNG KHÔI PHỤC TÀI KHOẢN ĐÃ ĐĂNG NHẬP ---
+  // Khôi phục tài khoản đăng nhập
   useEffect(() => {
     const savedUser = localStorage.getItem("user");
     if (savedUser) {
@@ -85,14 +89,14 @@ export default function App() {
     }
   }, []);
 
-  // --- PHẢN HỒI RUNG HAPTIC TRÊN ĐIỆN THOẠI KHI BỊ BẮN ---
+  // Rung Haptic trên điện thoại khi bị bắn
   useEffect(() => {
     if (vibrate && recentShot && window.navigator.vibrate) {
       window.navigator.vibrate([100, 50, 100]);
     }
   }, [recentShot, vibrate]);
 
-  // --- QUÁN LÝ NHẠC NỀN (BGM) THEO MÀN HÌNH & ÂM LƯỢNG ---
+  // Quản lý BGM theo màn hình
   useEffect(() => {
     if (!soundEnabled) {
       stopBGM();
@@ -108,7 +112,7 @@ export default function App() {
     }
   }, [gameState, soundEnabled, bgmVolume]);
 
-  // --- PHÁT TIẾNG TURN TIMER 5S CUỐI ---
+  // Turn Timer 5s sound
   useEffect(() => {
     if (
       gameState === "PLAYING" &&
@@ -126,7 +130,6 @@ export default function App() {
     setCurrentUser(null);
   };
 
-  // --- HÀM BẮN TỰ ĐỘNG KHI HẾT 20S ---
   const autoFireRandomShot = () => {
     if (!isMyTurn || gameState !== "PLAYING" || recentShot !== null) return;
 
@@ -141,16 +144,13 @@ export default function App() {
     }
   };
 
-  // --- ĐẾM NGƯỢC 20S & AUTO FIRE ---
   useEffect(() => {
     let timer = null;
     if (gameState === "PLAYING" && turnTimeLeft > 0) {
       timer = setInterval(() => {
         setTurnTimeLeft((prev) => {
           if (prev <= 1) {
-            if (isMyTurn) {
-              autoFireRandomShot();
-            }
+            if (isMyTurn) autoFireRandomShot();
             return 0;
           }
           return prev - 1;
@@ -160,7 +160,6 @@ export default function App() {
     return () => clearInterval(timer);
   }, [gameState, turnTimeLeft, isMyTurn, opponentHits, recentShot]);
 
-  // --- RESET STATE KHI VÀO TRẬN MỚI ---
   const resetGameData = () => {
     setMyBoard(Array(64).fill(null));
     setOpponentHits(Array(64).fill(null));
@@ -174,7 +173,7 @@ export default function App() {
     setTurnTimeLeft(20);
   };
 
-  // --- SOCKET LISTENERS ---
+  // --- SOCKET LISTENERS (KHÔNG MẮC LỖI KHỞI TẠO LẠI KHI THAY ĐỔI SOUND) ---
   useEffect(() => {
     socket.connect();
 
@@ -195,7 +194,8 @@ export default function App() {
     });
 
     socket.on("start_coin_flip", (data) => {
-      playSFX("coin-flip.mp3", soundEnabled, sfxVolume);
+      const { soundEnabled: sEnabled, sfxVolume: sVol } = soundRef.current;
+      playSFX("coin-flip.mp3", sEnabled, sVol);
       const first = data.firstTurnId === socket.id;
       setCoinFlipResult(first ? "FIRST" : "SECOND");
       setIsMyTurn(first);
@@ -203,14 +203,14 @@ export default function App() {
     });
 
     socket.on("shot_result", (data) => {
+      const { soundEnabled: sEnabled, sfxVolume: sVol } = soundRef.current;
       const isMeShooter = data.shooter === socket.id;
       const type = data.sunkShopId ? "SUNK" : data.isHit ? "HIT" : "MISS";
 
-      // Phát hiệu ứng âm thanh Bắn Trúng (sizzling-pan.mp3) / Bắn Trượt (waterdrop.mp3)
       if (data.isHit) {
-        playSFX("sizzling-pan.mp3", soundEnabled, sfxVolume);
+        playSFX("sizzling-pan.mp3", sEnabled, sVol);
       } else {
-        playSFX("waterdrop.mp3", soundEnabled, sfxVolume * 0.7);
+        playSFX("waterdrop.mp3", sEnabled, sVol * 0.7);
       }
 
       const textList = TAUNT_TEXTS[type] || TAUNT_TEXTS.MISS;
@@ -252,10 +252,11 @@ export default function App() {
     });
 
     socket.on("game_over", (data) => {
+      const { soundEnabled: sEnabled, sfxVolume: sVol } = soundRef.current;
       setWinner(data.winner);
       setGameState("FINISHED");
       if (data.winner === socket.id) {
-        playSFX("success jingle.mp3", soundEnabled, sfxVolume);
+        playSFX("success jingle.mp3", sEnabled, sVol);
       }
     });
 
@@ -286,7 +287,7 @@ export default function App() {
       socket.off("opponent_left");
       socket.disconnect();
     };
-  }, [soundEnabled, sfxVolume]);
+  }, []); // [] rỗng giữ socket liên tục trong suốt quá trình chơi
 
   // --- HANDLERS ---
   const handleFindMatch = (name) => {
@@ -380,28 +381,28 @@ export default function App() {
       return cell !== null && cell.shopId !== selectedShop;
     });
 
-    if (isOverlap) return;
+    if (!isOverlap) {
+      const newBoard = myBoard.map((cell) =>
+        cell && cell.shopId === selectedShop ? null : cell,
+      );
 
-    const newBoard = myBoard.map((cell) =>
-      cell && cell.shopId === selectedShop ? null : cell,
-    );
+      indices.forEach((idx) => {
+        newBoard[idx] = {
+          shopId: currentShopObj.id,
+          icon: currentShopObj.icon,
+          name: currentShopObj.name,
+        };
+      });
 
-    indices.forEach((idx) => {
-      newBoard[idx] = {
-        shopId: currentShopObj.id,
-        icon: currentShopObj.icon,
-        name: currentShopObj.name,
-      };
-    });
+      setMyBoard(newBoard);
 
-    setMyBoard(newBoard);
-
-    const placedShopIds = new Set(
-      newBoard.filter(Boolean).map((c) => c.shopId),
-    );
-    const nextShop = SHOPS.find((s) => !placedShopIds.has(s.id));
-    if (nextShop) {
-      setSelectedShop(nextShop.id);
+      const placedShopIds = new Set(
+        newBoard.filter(Boolean).map((c) => c.shopId),
+      );
+      const nextShop = SHOPS.find((s) => !placedShopIds.has(s.id));
+      if (nextShop) {
+        setSelectedShop(nextShop.id);
+      }
     }
   };
 
@@ -459,31 +460,170 @@ export default function App() {
     return <LoadingScreen onFinish={() => setAppLoading(false)} />;
   }
 
-  if (gameState === "LOBBY") {
-    return (
-      <>
-        <LobbyScreen
-          onFindMatch={handleFindMatch}
-          onOpenSettings={() => {
-            playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
-            setShowSettings(true);
-          }}
-          onOpenGuide={() => {
-            playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
-            setShowGuide(true);
-          }}
-          onOpenLeaderboard={() => {
-            playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
-            setShowLeaderboard(true);
-          }}
-          onOpenAuth={() => {
-            playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
-            setShowAuthModal(true);
-          }}
-          currentUser={currentUser}
-          onLogout={handleLogout}
-        />
-        {searching && <SearchingScreen onCancel={handleCancelSearch} />}
+  return (
+    <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-2 select-none font-sans">
+      <div className="w-full max-w-md bg-slate-900 rounded-3xl shadow-2xl overflow-hidden border-4 border-slate-800 flex flex-col h-[850px] max-h-screen relative">
+        {/* RENDER MÀN HÌNH CHÍNH HOẶC MÀN HÌNH IN-GAME */}
+        {gameState === "LOBBY" ? (
+          <>
+            <LobbyScreen
+              onFindMatch={handleFindMatch}
+              onOpenSettings={() => {
+                playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
+                setShowSettings(true);
+              }}
+              onOpenGuide={() => {
+                playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
+                setShowGuide(true);
+              }}
+              onOpenLeaderboard={() => {
+                playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
+                setShowLeaderboard(true);
+              }}
+              onOpenAuth={() => {
+                playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
+                setShowAuthModal(true);
+              }}
+              currentUser={currentUser}
+              onLogout={handleLogout}
+            />
+            {searching && <SearchingScreen onCancel={handleCancelSearch} />}
+          </>
+        ) : (
+          <>
+            <Header
+              team={team}
+              playerName={currentUser?.displayName || playerName}
+              isMyTurn={isMyTurn}
+              gameState={gameState}
+              turnTimeLeft={turnTimeLeft}
+              onOpenSettings={() => {
+                playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
+                setShowSettings(true);
+              }}
+            />
+
+            <main className="flex-1 bg-slate-950 p-3 flex flex-col justify-between items-center relative overflow-visible">
+              {gameState === "PLAYING" && (
+                <div className="w-full max-w-[360px] bg-slate-900/90 border border-slate-800 rounded-2xl p-2.5 flex justify-between items-center shadow-xl my-auto animate-fade-in">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider">
+                      🏠 QUÁN BẠN
+                    </span>
+                    <div className="flex gap-1.5">
+                      {SHOPS.map((s) => {
+                        const health = getShopHealth(s.id);
+                        return (
+                          <div
+                            key={`my-hud-${s.id}`}
+                            className={`relative w-9 h-9 rounded-xl p-0.5 border flex items-center justify-center transition-all ${
+                              health.isSunk
+                                ? "bg-red-950/70 border-red-700 opacity-40 grayscale"
+                                : "bg-slate-800 border-slate-700 shadow"
+                            }`}
+                          >
+                            <img
+                              src={s.icon}
+                              className="w-full h-full object-contain"
+                              alt={s.name}
+                            />
+                            {health.isSunk && (
+                              <span className="absolute inset-0 flex items-center justify-center text-xs font-black text-red-500">
+                                ✖
+                              </span>
+                            )}
+                            {!health.isSunk && health.total > 0 && (
+                              <span className="absolute -bottom-1 -right-1 bg-slate-950 text-emerald-400 border border-emerald-800 text-[9px] font-black px-1 rounded-full">
+                                {health.alive}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="text-xs font-black text-slate-600 px-1">
+                    VS
+                  </div>
+
+                  <div className="flex flex-col items-end gap-1">
+                    <span className="text-[10px] font-black text-rose-400 uppercase tracking-wider">
+                      🎯 ĐỐI THỦ
+                    </span>
+                    <div className="flex gap-1.5">
+                      {SHOPS.map((s) => {
+                        return (
+                          <div
+                            key={`opp-hud-${s.id}`}
+                            className="w-9 h-9 rounded-xl p-0.5 border bg-slate-800/80 border-slate-700/80 flex items-center justify-center text-xs font-bold text-slate-400 shadow"
+                          >
+                            ❓
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="my-auto w-full flex justify-center">
+                <GameBoard
+                  gameState={gameState}
+                  myBoard={myBoard}
+                  setMyBoard={setMyBoard}
+                  opponentHits={opponentHits}
+                  selectedShop={selectedShop}
+                  orientation={orientation}
+                  previewIndex={previewIndex}
+                  setPreviewIndex={setPreviewIndex}
+                  isMyTurn={isMyTurn}
+                  onFireShot={handleFireShot}
+                  recentShot={showTaunt ? recentShot : null}
+                  soundEnabled={soundEnabled}
+                />
+              </div>
+            </main>
+
+            <BottomPanel
+              gameState={gameState}
+              selectedShop={selectedShop}
+              onSelectShop={(id) => {
+                playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
+                setSelectedShop(id);
+              }}
+              orientation={orientation}
+              onRotate={handleRotate}
+              onResetBoard={handleResetBoard}
+              myBoard={myBoard}
+              onConfirmPlaceShop={handleConfirmPlaceShop}
+              isPreviewValid={previewIndex !== null}
+              onReady={handleReady}
+              onSendChat={handleSendChat}
+              messages={messages}
+            />
+
+            {coinFlipResult && (
+              <CoinFlipOverlay
+                result={coinFlipResult}
+                onComplete={() => {
+                  setCoinFlipResult(null);
+                  setGameState("PLAYING");
+                }}
+              />
+            )}
+
+            {gameState === "FINISHED" && (
+              <ResultScreen
+                isWinner={winner === socket.id}
+                onRematch={handleRematch}
+                onLeave={handleLeaveRoom}
+              />
+            )}
+          </>
+        )}
+
+        {/* --- DÙNG CHUNG TẤT CẢ MODALS OVERLAY BÊN TRÊN TOÀN BỘ GAME --- */}
         <SettingsModal
           isOpen={showSettings}
           onClose={() => setShowSettings(false)}
@@ -508,156 +648,6 @@ export default function App() {
           isOpen={showAuthModal}
           onClose={() => setShowAuthModal(false)}
           onAuthSuccess={(user) => setCurrentUser(user)}
-        />
-      </>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-2 select-none font-sans">
-      <div className="w-full max-w-md bg-slate-900 rounded-3xl shadow-2xl overflow-hidden border-4 border-slate-800 flex flex-col h-[850px] max-h-screen relative">
-        <Header
-          team={team}
-          playerName={currentUser?.displayName || playerName}
-          isMyTurn={isMyTurn}
-          gameState={gameState}
-          turnTimeLeft={turnTimeLeft}
-          onOpenSettings={() => {
-            playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
-            setShowSettings(true);
-          }}
-        />
-
-        <main className="flex-1 bg-slate-950 p-3 flex flex-col justify-between items-center relative overflow-visible">
-          {gameState === "PLAYING" && (
-            <div className="w-full max-w-[360px] bg-slate-900/90 border border-slate-800 rounded-2xl p-2.5 flex justify-between items-center shadow-xl my-auto animate-fade-in">
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider">
-                  🏠 QUÁN BẠN
-                </span>
-                <div className="flex gap-1.5">
-                  {SHOPS.map((s) => {
-                    const health = getShopHealth(s.id);
-                    return (
-                      <div
-                        key={`my-hud-${s.id}`}
-                        className={`relative w-9 h-9 rounded-xl p-0.5 border flex items-center justify-center transition-all ${
-                          health.isSunk
-                            ? "bg-red-950/70 border-red-700 opacity-40 grayscale"
-                            : "bg-slate-800 border-slate-700 shadow"
-                        }`}
-                      >
-                        <img
-                          src={s.icon}
-                          className="w-full h-full object-contain"
-                          alt={s.name}
-                        />
-                        {health.isSunk && (
-                          <span className="absolute inset-0 flex items-center justify-center text-xs font-black text-red-500">
-                            ✖
-                          </span>
-                        )}
-                        {!health.isSunk && health.total > 0 && (
-                          <span className="absolute -bottom-1 -right-1 bg-slate-950 text-emerald-400 border border-emerald-800 text-[9px] font-black px-1 rounded-full">
-                            {health.alive}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="text-xs font-black text-slate-600 px-1">VS</div>
-
-              <div className="flex flex-col items-end gap-1">
-                <span className="text-[10px] font-black text-rose-400 uppercase tracking-wider">
-                  🎯 ĐỐI THỦ
-                </span>
-                <div className="flex gap-1.5">
-                  {SHOPS.map((s) => {
-                    return (
-                      <div
-                        key={`opp-hud-${s.id}`}
-                        className="w-9 h-9 rounded-xl p-0.5 border bg-slate-800/80 border-slate-700/80 flex items-center justify-center text-xs font-bold text-slate-400 shadow"
-                      >
-                        ❓
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="my-auto w-full flex justify-center">
-            <GameBoard
-              gameState={gameState}
-              myBoard={myBoard}
-              setMyBoard={setMyBoard}
-              opponentHits={opponentHits}
-              selectedShop={selectedShop}
-              orientation={orientation}
-              previewIndex={previewIndex}
-              setPreviewIndex={setPreviewIndex}
-              isMyTurn={isMyTurn}
-              onFireShot={handleFireShot}
-              recentShot={showTaunt ? recentShot : null}
-              soundEnabled={soundEnabled}
-            />
-          </div>
-        </main>
-
-        <BottomPanel
-          gameState={gameState}
-          selectedShop={selectedShop}
-          onSelectShop={(id) => {
-            playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
-            setSelectedShop(id);
-          }}
-          orientation={orientation}
-          onRotate={handleRotate}
-          onResetBoard={handleResetBoard}
-          myBoard={myBoard}
-          onConfirmPlaceShop={handleConfirmPlaceShop}
-          isPreviewValid={previewIndex !== null}
-          onReady={handleReady}
-          onSendChat={handleSendChat}
-          messages={messages}
-        />
-
-        {coinFlipResult && (
-          <CoinFlipOverlay
-            result={coinFlipResult}
-            onComplete={() => {
-              setCoinFlipResult(null);
-              setGameState("PLAYING");
-            }}
-          />
-        )}
-
-        {gameState === "FINISHED" && (
-          <ResultScreen
-            isWinner={winner === socket.id}
-            onRematch={handleRematch}
-            onLeave={handleLeaveRoom}
-          />
-        )}
-
-        <SettingsModal
-          isOpen={showSettings}
-          onClose={() => setShowSettings(false)}
-          soundEnabled={soundEnabled}
-          onToggleSound={() => setSoundEnabled(!soundEnabled)}
-          bgmVolume={bgmVolume}
-          onChangeBgmVolume={setBgmVolume}
-          sfxVolume={sfxVolume}
-          onChangeSfxVolume={setSfxVolume}
-          showTaunt={showTaunt}
-          onToggleTaunt={() => setShowTaunt(!showTaunt)}
-          vibrate={vibrate}
-          onToggleVibrate={() => setVibrate(!vibrate)}
-          playerName={currentUser?.displayName || playerName}
         />
       </div>
     </div>

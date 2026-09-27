@@ -46,11 +46,14 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
     }
 
     try {
-      const res = await fetch(`http://localhost:3001${endpoint}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const res = await fetch(
+        `https://san-quan-hem-backend.onrender.com${endpoint}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+      );
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Đã có lỗi xảy ra!");

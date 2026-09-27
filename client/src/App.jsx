@@ -24,7 +24,7 @@ import LeaderboardModal from "./components/Modals/LeaderboardModal";
 import SettingsModal from "./components/Modals/SettingsModal";
 
 // Kết nối Socket.IO tới Server
-const socket = io("http://localhost:3001", {
+const socket = io("https://san-quan-hem-backend.onrender.com", {
   autoConnect: false,
 });
 

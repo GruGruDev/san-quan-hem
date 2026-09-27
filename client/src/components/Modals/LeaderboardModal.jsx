@@ -9,7 +9,7 @@ export default function LeaderboardModal({ isOpen, onClose }) {
   useEffect(() => {
     if (isOpen) {
       setLoading(true);
-      fetch("http://localhost:3001/api/leaderboard")
+      fetch("https://san-quan-hem-backend.onrender.com/api/leaderboard")
         .then((res) => res.json())
         .then((data) => {
           setLeaderboardData(Array.isArray(data) ? data : []);

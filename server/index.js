@@ -169,7 +169,7 @@ let waitingPlayer = null;
 let searchTimer = null;
 const activeRooms = {};
 
-// HÀM 1: Random chọn 3 quán cho mỗi trận
+// HÀM 1: Random chọn 3 quán cho mỗi trận (chỉ 2ô, 3ô, 4ô)
 const selectRandomShops = () => {
   const pool = [
     {
@@ -189,10 +189,7 @@ const selectRandomShops = () => {
     },
   ];
 
-  // Trộn ngẫu nhiên và lấy 3 quán
   const picked = pool.sort(() => 0.5 - Math.random()).slice(0, 3);
-
-  // Sắp xếp thứ tự bắt buộc từ nhỏ đến lớn: 2 ô -> 3 ô -> 4 ô
   return picked.sort((a, b) => a.size - b.size);
 };
 
@@ -281,21 +278,22 @@ const triggerBotShot = (roomId) => {
   }
 };
 
+// --- CHÍNH TẮC SOCKET CONNECTION SCOPE ---
 io.on("connection", (socket) => {
   console.log(`🔌 Người chơi kết nối: ${socket.id}`);
 
+  // Tìm đối thủ ghép ngẫu nhiên
   socket.on("tim_doi_thu", (data) => {
     const playerName = data.name || "Phượt Thủ";
     const userId = data.userId || null;
 
     if (waitingPlayer && waitingPlayer.socketId !== socket.id) {
-      // 🚨 FIX BUG: CHỐNG 1 TÀI KHOẢN TỰ GHÉP TRẬN ĐỂ CÀY RANK
       if (userId && waitingPlayer.userId === userId) {
         socket.emit(
           "waiting_for_opponent",
           "Phát hiện trùng tài khoản! Đang chờ phượt thủ khác...",
         );
-        return; // Hủy việc ghép 2 máy này với nhau
+        return;
       }
 
       if (searchTimer) clearTimeout(searchTimer);
@@ -304,7 +302,7 @@ io.on("connection", (socket) => {
       const player1 = waitingPlayer;
       const player2 = { socketId: socket.id, name: playerName, userId };
 
-      const roomShops = selectRandomShops(); // Chọn ngẫu nhiên 3 quán (Map Rotation)
+      const roomShops = selectRandomShops();
 
       activeRooms[roomId] = {
         players: {
@@ -352,7 +350,7 @@ io.on("connection", (socket) => {
         if (waitingPlayer && waitingPlayer.socketId === socket.id) {
           const roomId = `room_bot_${Date.now()}`;
           const botSocketId = `bot_${Date.now()}`;
-          const roomShops = selectRandomShops(); // Lấy 3 quán ngẫu nhiên cho trận đấu với BOT
+          const roomShops = selectRandomShops();
 
           activeRooms[roomId] = {
             players: {
@@ -400,6 +398,102 @@ io.on("connection", (socket) => {
     }
   });
 
+  // --- CHẾ ĐỘ PHÒNG KÍN (MÃ HẺM) ---
+  socket.on("create_private_room", (data) => {
+    const playerName = data.name || "Phượt Thủ";
+    const userId = data.userId || null;
+
+    const roomCode = Math.random().toString(36).substring(2, 7).toUpperCase();
+    const roomId = `private_${roomCode}`;
+    const roomShops = selectRandomShops();
+
+    activeRooms[roomId] = {
+      roomCode,
+      roomId,
+      isPrivate: true,
+      players: {
+        [socket.id]: {
+          socketId: socket.id,
+          name: playerName,
+          userId,
+          team: "red",
+          board: [],
+          ready: false,
+        },
+      },
+      shops: roomShops,
+      gameState: "WAITING_FRIEND",
+      turn: null,
+      isBotRoom: false,
+    };
+
+    socket.join(roomId);
+    socket.emit("private_room_created", {
+      roomId,
+      roomCode,
+      message: `Đã tạo Hẻm Kín [${roomCode}]! Hãy gửi mã cho bạn bè.`,
+    });
+  });
+
+  socket.on("join_private_room", (data) => {
+    const playerName = data.name || "Phượt Thủ";
+    const userId = data.userId || null;
+
+    const roomCode = (data.roomCode || "").trim().toUpperCase();
+    const roomId = `private_${roomCode}`;
+
+    const room = activeRooms[roomId];
+
+    if (!room) {
+      socket.emit(
+        "join_private_error",
+        "Mã Hẻm không tồn tại hoặc đã giải tán!",
+      );
+      return;
+    }
+
+    if (Object.keys(room.players).length >= 2) {
+      socket.emit("join_private_error", "Hẻm này đã đủ 2 phượt thủ!");
+      return;
+    }
+
+    const hostSocketId = Object.keys(room.players)[0];
+    if (userId && room.players[hostSocketId].userId === userId) {
+      socket.emit(
+        "join_private_error",
+        "Bạn không thể tự vào phòng kín của chính mình!",
+      );
+      return;
+    }
+
+    room.players[socket.id] = {
+      socketId: socket.id,
+      name: playerName,
+      userId,
+      team: "blue",
+      board: [],
+      ready: false,
+    };
+    room.gameState = "SETUP";
+
+    socket.join(roomId);
+
+    io.to(hostSocketId).emit("match_found", {
+      roomId,
+      team: "red",
+      shops: room.shops,
+      message: "Bạn bè đã vào Hẻm! Sẵn sàng giăng bẫy!",
+    });
+
+    socket.emit("match_found", {
+      roomId,
+      team: "blue",
+      shops: room.shops,
+      message: "Đã vào Hẻm thành công! Bắt đầu xếp quán!",
+    });
+  });
+
+  // Chốt vị trí quán
   socket.on("ready_place_shops", ({ roomId, playerBoard }) => {
     const room = activeRooms[roomId];
     if (!room) return;
@@ -421,6 +515,7 @@ io.on("connection", (socket) => {
     }
   });
 
+  // Bắn đạn
   socket.on("fire_shot", async ({ roomId, targetIndex }) => {
     const room = activeRooms[roomId];
     if (!room || room.gameState !== "PLAYING" || room.turn !== socket.id)
@@ -481,6 +576,7 @@ io.on("connection", (socket) => {
     }
   });
 
+  // Chat
   socket.on("send_chat", ({ roomId, text }) => {
     const room = activeRooms[roomId];
     if (room && room.players[socket.id]) {
@@ -491,6 +587,7 @@ io.on("connection", (socket) => {
     }
   });
 
+  // Xử lý Ngắt kết nối
   socket.on("disconnect", async () => {
     if (waitingPlayer && waitingPlayer.socketId === socket.id) {
       if (searchTimer) clearTimeout(searchTimer);
@@ -499,12 +596,10 @@ io.on("connection", (socket) => {
 
     for (const [roomId, room] of Object.entries(activeRooms)) {
       if (room.players[socket.id]) {
-        // Áp dụng CƠ CHẾ XỬ PHẠT SỦI TRẬN (Trừ khi đã FINISHED thì không phạt)
         if (room.gameState === "SETUP" || room.gameState === "PLAYING") {
           const leaverUserId = room.players[socket.id].userId;
           if (leaverUserId && !room.isBotRoom) {
             try {
-              // Cộng 1 vào số trận (matches) nhưng không cộng số thắng (wins), gián tiếp làm giảm % tỉ lệ thắng.
               await User.findByIdAndUpdate(leaverUserId, {
                 $inc: { matches: 1 },
               });
@@ -514,109 +609,10 @@ io.on("connection", (socket) => {
           }
         }
 
-        io.to(roomId).emit("opponent_left", "Đối thủ đã sủi khỏi hẻm!");
+        io.to(roomId).emit("opponent_left", "Đối thủ đã rời hẻm!");
         delete activeRooms[roomId];
       }
     }
-  });
-  // --- CHẾ ĐỘ PHÒNG KÍN (MÃ HẺM) ---
-
-  // 1. Tạo phòng kín
-  socket.on("create_private_room", (data) => {
-    const playerName = data.name || "Phượt Thủ";
-    const userId = data.userId || null;
-
-    // Sinh Mã Hẻm 5 ký tự ngẫu nhiên (Ví dụ: HEM89)
-    const roomCode = Math.random().toString(36).substring(2, 7).toUpperCase();
-    const roomId = `private_${roomCode}`;
-    const roomShops = selectRandomShops();
-
-    activeRooms[roomId] = {
-      roomCode,
-      isPrivate: true,
-      players: {
-        [socket.id]: {
-          socketId: socket.id,
-          name: playerName,
-          userId,
-          team: "red",
-          board: [],
-          ready: false,
-        },
-      },
-      shops: roomShops,
-      gameState: "WAITING_FRIEND",
-      turn: null,
-      isBotRoom: false,
-    };
-
-    socket.join(roomId);
-    socket.emit("private_room_created", {
-      roomId,
-      roomCode,
-      message: `Đã tạo Hẻm Kín [${roomCode}]! Hãy gửi mã cho bạn bè.`,
-    });
-  });
-
-  // 2. Tham gia phòng kín bằng Mã Hẻm
-  socket.on("join_private_room", (data) => {
-    const playerName = data.name || "Phượt Thủ";
-    const userId = data.userId || null;
-    const roomCode = (data.roomCode || "").trim().toUpperCase();
-    const roomId = `private_${roomCode}`;
-
-    const room = activeRooms[roomId];
-
-    if (!room) {
-      socket.emit(
-        "join_private_error",
-        "Mã Hẻm không tồn tại hoặc đã giải tán!",
-      );
-      return;
-    }
-
-    if (Object.keys(room.players).length >= 2) {
-      socket.emit("join_private_error", "Hẻm này đã đủ 2 phượt thủ!");
-      return;
-    }
-
-    // Chống tự vào phòng kín của chính mình
-    const hostSocketId = Object.keys(room.players)[0];
-    if (userId && room.players[hostSocketId].userId === userId) {
-      socket.emit(
-        "join_private_error",
-        "Bạn không thể tự vào phòng kín của chính mình!",
-      );
-      return;
-    }
-
-    // Ghép người chơi thứ 2 vào
-    room.players[socket.id] = {
-      socketId: socket.id,
-      name: playerName,
-      userId,
-      team: "blue",
-      board: [],
-      ready: false,
-    };
-    room.gameState = "SETUP";
-
-    socket.join(roomId);
-
-    // Thông báo cho cả 2 người vào trận
-    io.to(hostSocketId).emit("match_found", {
-      roomId,
-      team: "red",
-      shops: room.shops,
-      message: "Bạn bè đã vào Hẻm! Sẵn sàng giăng bẫy!",
-    });
-
-    socket.emit("match_found", {
-      roomId,
-      team: "blue",
-      shops: room.shops,
-      message: "Đã vào Hẻm thành công! Bắt đầu xếp quán!",
-    });
   });
 });
 

@@ -3,12 +3,12 @@
   "name": "Săn Quán Hẻm - Đại Chiến Ăn Vặt",
   "icons": [
     {
-      "src": "/cavienchien.png",
+      "src": "/favicon.png",
       "type": "image/png",
       "sizes": "192x192"
     },
     {
-      "src": "/cavienchien.png",
+      "src": "/favicon.png",
       "type": "image/png",
       "sizes": "512x512"
     }

@@ -1,6 +1,7 @@
 require("dotenv").config();
 
 const express = require("express");
+const crypto = require("crypto");
 const http = require("http");
 const { Server } = require("socket.io");
 const mongoose = require("mongoose");
@@ -8,6 +9,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
 const { rateLimit } = require("express-rate-limit");
+const nodemailer = require("nodemailer");
 const User = require("./models/User");
 
 // --- BÍ MẬT LẤY TỪ BIẾN MÔI TRƯỜNG (.env / Render Dashboard) ---
@@ -18,6 +20,26 @@ if (!MONGO_URI || !JWT_SECRET || JWT_SECRET.length < 32) {
   );
   process.exit(1);
 }
+
+const SMTP_PORT = Number.parseInt(process.env.SMTP_PORT || "587", 10);
+const mailTransport =
+  process.env.SMTP_HOST &&
+  process.env.SMTP_USER &&
+  process.env.SMTP_PASS &&
+  process.env.SMTP_FROM &&
+  Number.isInteger(SMTP_PORT) &&
+  SMTP_PORT > 0 &&
+  SMTP_PORT <= 65_535
+    ? nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: SMTP_PORT,
+        secure: process.env.SMTP_SECURE === "true" || SMTP_PORT === 465,
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        },
+      })
+    : null;
 
 const getUtcWeekStart = (date = new Date()) => {
   const weekStart = new Date(
@@ -59,6 +81,35 @@ const updatePlayerStats = (userId, isWinner) => {
   ]);
 };
 
+const normalizeEmail = (value) =>
+  typeof value === "string" ? value.trim().toLowerCase() : "";
+
+const isValidEmail = (value) =>
+  value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+
+const getRecoveryEmail = (user) => {
+  const email = normalizeEmail(user.email);
+  if (isValidEmail(email)) return email;
+  const username = normalizeEmail(user.username);
+  return isValidEmail(username) ? username : null;
+};
+
+const hashPasswordResetCode = (userId, code) =>
+  crypto
+    .createHmac("sha256", JWT_SECRET)
+    .update(`${userId}:${code}`)
+    .digest("hex");
+
+const matchesPasswordResetCode = (userId, code, storedHash) => {
+  if (typeof storedHash !== "string") return false;
+  const expected = Buffer.from(storedHash, "hex");
+  const actual = Buffer.from(hashPasswordResetCode(userId, code), "hex");
+  return (
+    expected.length === actual.length &&
+    crypto.timingSafeEqual(expected, actual)
+  );
+};
+
 const ALLOWED_ORIGINS = (
   process.env.CLIENT_ORIGINS ||
   "https://san-quan-hem.vercel.app,http://localhost:5173,http://localhost:3000"
@@ -80,6 +131,22 @@ const authLimiter = rateLimit({
   message: { message: "Quá nhiều lần thử. Vui lòng đợi 15 phút rồi thử lại." },
 });
 
+const passwordResetRequestLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 3,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { message: "Quá nhiều yêu cầu gửi mã. Vui lòng thử lại sau." },
+});
+
+const passwordResetVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { message: "Quá nhiều lần nhập mã. Vui lòng thử lại sau." },
+});
+
 // --- KẾT NỐI MONGODB ATLAS CLOUD ---
 mongoose
   .connect(MONGO_URI)
@@ -89,11 +156,13 @@ mongoose
 // --- API AUTHENTICATION ---
 app.post("/api/register", authLimiter, async (req, res) => {
   try {
-    const { username, password, displayName } = req.body || {};
+    const { username, email, password, displayName } = req.body || {};
+    const normalizedEmail = normalizeEmail(email);
     if (
       typeof username !== "string" ||
       username.trim().length < 3 ||
       username.trim().length > 32 ||
+      !isValidEmail(normalizedEmail) ||
       typeof password !== "string" ||
       password.length < 8 ||
       Buffer.byteLength(password, "utf8") > 72 ||
@@ -108,21 +177,30 @@ app.post("/api/register", authLimiter, async (req, res) => {
     const normalizedUsername = username.trim();
     const normalizedDisplayName = displayName?.trim() || normalizedUsername;
 
-    const existingUser = await User.findOne({ username: normalizedUsername });
+    const existingUser = await User.findOne({
+      $or: [{ username: normalizedUsername }, { email: normalizedEmail }],
+    });
     if (existingUser) {
-      return res.status(400).json({ message: "Tên tài khoản đã tồn tại!" });
+      return res
+        .status(400)
+        .json({ message: "Tên tài khoản hoặc email đã được sử dụng!" });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const newUser = new User({
       username: normalizedUsername,
+      email: normalizedEmail,
       password: hashedPassword,
       displayName: normalizedDisplayName,
     });
     await newUser.save();
 
     const token = jwt.sign(
-      { userId: newUser._id.toString(), username: normalizedUsername },
+      {
+        userId: newUser._id.toString(),
+        username: normalizedUsername,
+        tokenVersion: newUser.tokenVersion,
+      },
       JWT_SECRET,
       {
         expiresIn: "7d",
@@ -139,6 +217,11 @@ app.post("/api/register", authLimiter, async (req, res) => {
     });
   } catch (err) {
     console.error("Register Error:", err);
+    if (err.code === 11000) {
+      return res
+        .status(400)
+        .json({ message: "Tên tài khoản hoặc email đã được sử dụng!" });
+    }
     res.status(500).json({ message: "Lỗi máy chủ!" });
   }
 });
@@ -174,7 +257,11 @@ app.post("/api/login", authLimiter, async (req, res) => {
     }
 
     const token = jwt.sign(
-      { userId: user._id.toString(), username: normalizedUsername },
+      {
+        userId: user._id.toString(),
+        username: normalizedUsername,
+        tokenVersion: user.tokenVersion || 0,
+      },
       JWT_SECRET,
       { expiresIn: "7d" },
     );
@@ -196,9 +283,206 @@ app.post("/api/login", authLimiter, async (req, res) => {
 app.post("/api/forgot-password", async (req, res) => {
   res.status(410).json({
     message:
-      "Khôi phục mật khẩu hiện chưa khả dụng vì chưa có bước xác minh danh tính. Vui lòng liên hệ quản trị viên.",
+      "Endpoint cũ đã ngừng hoạt động. Hãy dùng luồng gửi mã OTP qua email.",
   });
 });
+
+app.post(
+  "/api/password-reset/request",
+  passwordResetRequestLimiter,
+  async (req, res) => {
+    if (!mailTransport) {
+      return res.status(503).json({
+        message: "Dịch vụ email khôi phục chưa được cấu hình trên máy chủ.",
+      });
+    }
+
+    const { username } = req.body || {};
+    if (
+      typeof username !== "string" ||
+      !username.trim() ||
+      username.length > 254
+    ) {
+      return res.status(400).json({ message: "Tên tài khoản không hợp lệ." });
+    }
+
+    const genericMessage =
+      "Nếu tài khoản có email khôi phục, mã xác minh sẽ được gửi đến địa chỉ đó.";
+
+    try {
+      const user = await User.findOne({ username: username.trim() });
+      if (!user) return res.json({ message: genericMessage });
+
+      const email = getRecoveryEmail(user);
+      if (!email) return res.json({ message: genericMessage });
+
+      const now = new Date();
+      const code = crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
+      const updatedUser = await User.findOneAndUpdate(
+        {
+          _id: user._id,
+          $or: [
+            { passwordResetRequestedAt: { $exists: false } },
+            {
+              passwordResetRequestedAt: {
+                $lte: new Date(now.getTime() - 60_000),
+              },
+            },
+          ],
+        },
+        {
+          $set: {
+            passwordResetOtpHash: hashPasswordResetCode(user._id, code),
+            passwordResetOtpExpiresAt: new Date(now.getTime() + 10 * 60_000),
+            passwordResetOtpAttempts: 0,
+            passwordResetRequestedAt: now,
+          },
+        },
+        { new: true },
+      );
+      if (!updatedUser) return res.json({ message: genericMessage });
+
+      try {
+        await mailTransport.sendMail({
+          from: process.env.SMTP_FROM,
+          to: email,
+          subject: "Mã xác minh đặt lại mật khẩu",
+          text: `Mã xác minh của bạn là ${code}. Mã hết hạn sau 10 phút. Nếu bạn không yêu cầu, hãy bỏ qua email này.`,
+        });
+      } catch (err) {
+        await User.updateOne(
+          { _id: user._id },
+          {
+            $unset: {
+              passwordResetOtpHash: 1,
+              passwordResetOtpExpiresAt: 1,
+              passwordResetOtpAttempts: 1,
+              passwordResetRequestedAt: 1,
+            },
+          },
+        );
+        console.error("Password reset email delivery failed.");
+        return res.status(503).json({
+          message: "Không gửi được email lúc này. Vui lòng thử lại sau.",
+        });
+      }
+
+      res.json({ message: genericMessage });
+    } catch (err) {
+      console.error("Password reset request failed:", err.message);
+      res.status(500).json({ message: "Lỗi máy chủ!" });
+    }
+  },
+);
+
+app.post(
+  "/api/password-reset/verify",
+  passwordResetVerifyLimiter,
+  async (req, res) => {
+    const { username, code, newPassword } = req.body || {};
+    if (
+      typeof username !== "string" ||
+      !username.trim() ||
+      username.length > 254 ||
+      typeof code !== "string" ||
+      !/^\d{6}$/.test(code) ||
+      typeof newPassword !== "string" ||
+      newPassword.length < 8 ||
+      Buffer.byteLength(newPassword, "utf8") > 72
+    ) {
+      return res
+        .status(400)
+        .json({ message: "Thông tin xác minh không hợp lệ." });
+    }
+
+    try {
+      const user = await User.findOne({ username: username.trim() }).select(
+        "+passwordResetOtpHash +passwordResetOtpExpiresAt +passwordResetOtpAttempts",
+      );
+      const now = new Date();
+      if (
+        !user ||
+        !user.passwordResetOtpHash ||
+        !user.passwordResetOtpExpiresAt ||
+        user.passwordResetOtpExpiresAt <= now ||
+        (user.passwordResetOtpAttempts || 0) >= 5
+      ) {
+        return res.status(400).json({
+          message: "Mã không hợp lệ hoặc đã hết hạn. Hãy yêu cầu mã mới.",
+        });
+      }
+
+      const otpMatches = matchesPasswordResetCode(
+        user._id,
+        code,
+        user.passwordResetOtpHash,
+      );
+      if (!otpMatches) {
+        const updatedUser = await User.findOneAndUpdate(
+          {
+            _id: user._id,
+            passwordResetOtpHash: user.passwordResetOtpHash,
+            passwordResetOtpExpiresAt: { $gt: now },
+            passwordResetOtpAttempts: { $lt: 5 },
+          },
+          { $inc: { passwordResetOtpAttempts: 1 } },
+          { new: true },
+        ).select("+passwordResetOtpAttempts");
+
+        if (updatedUser?.passwordResetOtpAttempts >= 5) {
+          await User.updateOne(
+            { _id: user._id },
+            {
+              $unset: {
+                passwordResetOtpHash: 1,
+                passwordResetOtpExpiresAt: 1,
+                passwordResetOtpAttempts: 1,
+                passwordResetRequestedAt: 1,
+              },
+            },
+          );
+        }
+
+        return res.status(400).json({
+          message: "Mã không hợp lệ hoặc đã hết hạn. Hãy yêu cầu mã mới.",
+        });
+      }
+
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      const updatedUser = await User.findOneAndUpdate(
+        {
+          _id: user._id,
+          passwordResetOtpHash: user.passwordResetOtpHash,
+          passwordResetOtpExpiresAt: { $gt: now },
+          passwordResetOtpAttempts: { $lt: 5 },
+        },
+        {
+          $set: { password: hashedPassword },
+          $inc: { tokenVersion: 1 },
+          $unset: {
+            passwordResetOtpHash: 1,
+            passwordResetOtpExpiresAt: 1,
+            passwordResetOtpAttempts: 1,
+            passwordResetRequestedAt: 1,
+          },
+        },
+        { new: true },
+      );
+
+      if (!updatedUser) {
+        return res.status(400).json({
+          message: "Mã không hợp lệ hoặc đã hết hạn. Hãy yêu cầu mã mới.",
+        });
+      }
+
+      io.in(`user:${user._id}`).disconnectSockets(true);
+      res.json({ message: "Đặt lại mật khẩu thành công. Hãy đăng nhập lại." });
+    } catch (err) {
+      console.error("Password reset verification failed:", err.message);
+      res.status(500).json({ message: "Lỗi máy chủ!" });
+    }
+  },
+);
 
 app.get("/api/leaderboard", async (req, res) => {
   try {
@@ -236,7 +520,7 @@ const io = new Server(server, {
   cors: { origin: ALLOWED_ORIGINS, methods: ["GET", "POST"] },
 });
 
-io.use((socket, next) => {
+io.use(async (socket, next) => {
   const token = socket.handshake.auth?.token;
   if (!token) {
     socket.data.userId = null;
@@ -248,7 +532,15 @@ io.use((socket, next) => {
     if (typeof payload.userId !== "string") {
       return next(new Error("Token tài khoản không hợp lệ."));
     }
-    socket.data.userId = payload.userId;
+
+    const user = await User.findById(payload.userId).select("tokenVersion");
+    if (!user || (payload.tokenVersion || 0) !== (user.tokenVersion || 0)) {
+      return next(
+        new Error("Phiên đăng nhập đã bị thu hồi. Vui lòng đăng nhập lại."),
+      );
+    }
+
+    socket.data.userId = user._id.toString();
     next();
   } catch {
     next(new Error("Phiên đăng nhập không hợp lệ hoặc đã hết hạn."));
@@ -444,6 +736,7 @@ const resetRoomForRematch = (room) => {
 
 // --- CHÍNH TẮC SOCKET CONNECTION SCOPE ---
 io.on("connection", (socket) => {
+  if (socket.data.userId) socket.join(`user:${socket.data.userId}`);
   console.log(`🔌 Người chơi kết nối: ${socket.id}`);
 
   // Tìm đối thủ ghép ngẫu nhiên

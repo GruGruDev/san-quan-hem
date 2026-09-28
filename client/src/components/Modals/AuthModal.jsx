@@ -2,13 +2,17 @@ import { useState } from "react";
 import { apiUrl } from "../../utils/api";
 
 export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
-  // mode: 'LOGIN' | 'REGISTER'
+  // mode: 'LOGIN' | 'REGISTER' | 'RESET_REQUEST' | 'RESET_CONFIRM'
   const [mode, setMode] = useState("LOGIN");
   const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [code, setCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
@@ -16,8 +20,11 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
     setError("");
     setNotice("");
     setUsername("");
+    setEmail("");
     setPassword("");
     setDisplayName("");
+    setCode("");
+    setNewPassword("");
   };
 
   const switchMode = (newMode) => {
@@ -25,17 +32,52 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
     setMode(newMode);
   };
 
+  const requestPasswordReset = async () => {
+    setError("");
+    setNotice("");
+    setSubmitting(true);
+    try {
+      const res = await fetch(apiUrl("/api/password-reset/request"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username }),
+      });
+      const data = await res.json();
+      if (!res.ok)
+        throw new Error(data.message || "Không gửi được mã xác minh.");
+      setMode("RESET_CONFIRM");
+      setNotice(data.message);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setNotice("");
 
-    const endpoint = mode === "LOGIN" ? "/api/login" : "/api/register";
+    if (mode === "RESET_REQUEST") {
+      await requestPasswordReset();
+      return;
+    }
+
+    const endpoint =
+      mode === "LOGIN"
+        ? "/api/login"
+        : mode === "REGISTER"
+          ? "/api/register"
+          : "/api/password-reset/verify";
     const payload =
       mode === "LOGIN"
         ? { username, password }
-        : { username, password, displayName };
+        : mode === "REGISTER"
+          ? { username, email, password, displayName }
+          : { username, code, newPassword };
 
+    setSubmitting(true);
     try {
       const res = await fetch(apiUrl(endpoint), {
         method: "POST",
@@ -46,6 +88,15 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Đã có lỗi xảy ra!");
 
+      if (mode === "RESET_CONFIRM") {
+        setMode("LOGIN");
+        setPassword("");
+        setCode("");
+        setNewPassword("");
+        setNotice(data.message);
+        return;
+      }
+
       // Lưu Token & Thông tin User vào LocalStorage khi Đăng nhập / Đăng ký
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
@@ -54,6 +105,8 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
       onClose();
     } catch (err) {
       setError(err.message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -73,7 +126,8 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
           <h2 className="text-xl font-black text-amber-300 tracking-wider uppercase drop-shadow">
             {mode === "LOGIN" && "🔑 ĐĂNG NHẬP"}
             {mode === "REGISTER" && "📝 ĐĂNG KÝ TÀI KHOẢN"}
-            {mode === "FORGOT" && "🔐 QUÊN MẬT KHẨU"}
+            {mode === "RESET_REQUEST" && "🔐 KHÔI PHỤC MẬT KHẨU"}
+            {mode === "RESET_CONFIRM" && "🔐 XÁC MINH EMAIL"}
           </h2>
         </div>
 
@@ -99,28 +153,79 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
             onChange={(e) => setUsername(e.target.value)}
             className="px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-amber-100 text-xs font-bold focus:outline-none focus:border-amber-400 transition"
             required
+            readOnly={mode === "RESET_CONFIRM"}
           />
 
           {/* Biệt danh */}
           {mode === "REGISTER" && (
+            <>
+              <input
+                type="email"
+                placeholder="Email khôi phục..."
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-amber-100 text-xs font-bold focus:outline-none focus:border-amber-400 transition"
+                maxLength={254}
+                autoComplete="email"
+                required
+              />
+              <input
+                type="text"
+                placeholder="Tên hiển thị (Biệt danh lúc đăng ký)..."
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                className="px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-amber-100 text-xs font-bold focus:outline-none focus:border-amber-400 transition"
+                maxLength={32}
+                required
+              />
+            </>
+          )}
+
+          {(mode === "LOGIN" || mode === "REGISTER") && (
             <input
-              type="text"
-              placeholder="Tên hiển thị (Biệt danh lúc đăng ký)..."
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
+              type="password"
+              placeholder="Mật khẩu (ít nhất 8 ký tự)..."
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               className="px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-amber-100 text-xs font-bold focus:outline-none focus:border-amber-400 transition"
+              minLength={mode === "REGISTER" ? 8 : undefined}
+              maxLength={72}
+              autoComplete={
+                mode === "LOGIN" ? "current-password" : "new-password"
+              }
               required
             />
           )}
 
-          <input
-            type="password"
-            placeholder="Mật khẩu..."
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-amber-100 text-xs font-bold focus:outline-none focus:border-amber-400 transition"
-            required
-          />
+          {mode === "RESET_CONFIRM" && (
+            <>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="Mã OTP 6 chữ số"
+                value={code}
+                onChange={(e) =>
+                  setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                }
+                className="px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-amber-100 text-xs font-bold focus:outline-none focus:border-amber-400 transition"
+                minLength={6}
+                maxLength={6}
+                required
+              />
+              <input
+                type="password"
+                placeholder="Mật khẩu mới (ít nhất 8 ký tự)..."
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-amber-100 text-xs font-bold focus:outline-none focus:border-amber-400 transition"
+                minLength={8}
+                maxLength={72}
+                autoComplete="new-password"
+                required
+              />
+            </>
+          )}
 
           {/* Nút Quên mật khẩu nhỏ khi ở giao diện Đăng nhập */}
           {mode === "LOGIN" && (
@@ -129,9 +234,8 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
                 type="button"
                 onClick={() => {
                   setError("");
-                  setNotice(
-                    "Khôi phục mật khẩu chưa khả dụng do chưa có xác minh danh tính. Vui lòng liên hệ quản trị viên.",
-                  );
+                  setNotice("");
+                  setMode("RESET_REQUEST");
                 }}
                 className="text-[11px] text-amber-400/80 hover:text-amber-300 font-semibold hover:underline"
               >
@@ -143,11 +247,27 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
           {/* Nút Submit */}
           <button
             type="submit"
+            disabled={submitting}
             className="w-full bg-linear-to-r from-amber-500 to-yellow-500 hover:brightness-110 text-slate-950 font-black py-3 rounded-xl shadow-lg active:scale-95 transition text-xs uppercase tracking-wider mt-1"
           >
             {mode === "LOGIN" && "ĐĂNG NHẬP NGAY"}
             {mode === "REGISTER" && "TẠO TÀI KHOẢN MỚI"}
+            {mode === "RESET_REQUEST" &&
+              (submitting ? "ĐANG GỬI MÃ..." : "GỬI MÃ OTP")}
+            {mode === "RESET_CONFIRM" &&
+              (submitting ? "ĐANG XÁC MINH..." : "ĐẶT LẠI MẬT KHẨU")}
           </button>
+
+          {mode === "RESET_CONFIRM" && (
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={requestPasswordReset}
+              className="text-xs text-amber-300 underline disabled:opacity-50"
+            >
+              Gửi mã mới
+            </button>
+          )}
         </form>
 
         {/* Chuyển đổi Mode bên dưới */}
@@ -164,9 +284,9 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
             </span>
           )}
 
-          {mode === "REGISTER" && (
+          {mode !== "LOGIN" && (
             <span>
-              Đã nhớ mật khẩu?{" "}
+              Quay lại đăng nhập?{" "}
               <button
                 onClick={() => switchMode("LOGIN")}
                 className="text-amber-400 font-black underline hover:text-amber-300"

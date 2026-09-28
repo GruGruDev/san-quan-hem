@@ -460,6 +460,11 @@ export default function App() {
   };
 
   const handleReady = () => {
+    if (!roomId) {
+      alert("Không tìm thấy mã phòng! Đang quay lại sảnh...");
+      setGameState("LOBBY");
+      return;
+    }
     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
     socket.emit("ready_place_shops", { roomId, playerBoard: myBoard });
     setMessages((prev) => [

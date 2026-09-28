@@ -492,24 +492,25 @@ io.on("connection", (socket) => {
     });
   });
 
-  // Chốt vị trí quán
+  // Chốt vị trí quán (Sẵn sàng)
   socket.on("ready_place_shops", ({ roomId, playerBoard }) => {
-    const room = activeRooms[roomId];
+    let room = activeRooms[roomId];
 
-    // 💥 FIX LỖI ĐỨNG HÌNH: Báo lỗi nếu Server vừa bị khởi động lại mất data
+    // Tự động tìm lại room nếu roomId bị sai lệch / nhầm lẫn
     if (!room) {
-      socket.emit(
-        "opponent_left",
-        "Lỗi đồng bộ: Phòng không tồn tại hoặc Server vừa bảo trì. Vui lòng tải lại trang!",
-      );
-      return;
+      for (const [rId, rData] of Object.entries(activeRooms)) {
+        if (rData.players && rData.players[socket.id]) {
+          room = rData;
+          roomId = rId;
+          break;
+        }
+      }
     }
 
-    // Chống Crash nếu Socket ID bị thay đổi do rớt mạng
-    if (!room.players[socket.id]) {
+    if (!room || !room.players[socket.id]) {
       socket.emit(
         "opponent_left",
-        "Lỗi kết nối: Mất phiên bản đồ. Vui lòng tìm trận lại!",
+        "Lỗi đồng bộ phòng! Vui lòng bấm Tìm Trận để vào lại hẻm mới.",
       );
       return;
     }
@@ -517,9 +518,9 @@ io.on("connection", (socket) => {
     room.players[socket.id].board = playerBoard;
     room.players[socket.id].ready = true;
 
-    // Kiểm tra đủ 2 người và cả 2 đều đã ready
-    const players = Object.values(room.players);
-    if (players.length === 2 && players.every((p) => p.ready)) {
+    // Kiểm tra tất cả người chơi trong phòng đã bấm ready chưa
+    const playerList = Object.values(room.players);
+    if (playerList.length >= 2 && playerList.every((p) => p.ready)) {
       room.gameState = "PLAYING";
       const playerIds = Object.keys(room.players);
       const firstTurnId =

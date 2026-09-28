@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-// Import mặc định phòng khi chưa nhận được props shops
 import { SHOPS as DEFAULT_SHOPS, SHOP_OUTLINE } from "../constants/game";
 import { playSFX } from "../utils/sound";
 
@@ -16,22 +15,21 @@ export default function GameBoard({
   onFireShot,
   recentShot,
   soundEnabled = true,
-  shops = DEFAULT_SHOPS, // NHẬN DANH SÁCH 3 QUÁN NGẪU NHIÊN TỪ APP TRUYỀN XUỐNG
+  shops = DEFAULT_SHOPS,
 }) {
   const isSetup = gameState === "SETUP";
   const isPlaying = gameState === "PLAYING";
   const [isDragging, setIsDragging] = useState(false);
-
-  // State lưu ô đang được gim kính ngắm vitri.png trước khi bắn
   const [aimingIndex, setAimingIndex] = useState(null);
 
-  // 🚨 DÙNG BIẾN `shops` thay vì `SHOPS` mặc định
   const currentShopObj = shops.find((s) => s.id === selectedShop) || shops[0];
 
-  // Phát âm thanh khi có kết quả phát bắn vừa rồi (HIT / MISS)
   useEffect(() => {
     if (recentShot) {
-      if (recentShot.type === "HIT" || recentShot.type === "SUNK") {
+      if (recentShot.type === "SUNK") {
+        // Cố tình đẩy âm thanh lớn hơn khi nổ quán
+        playSFX("sizzling-pan.mp3", soundEnabled, 1.0);
+      } else if (recentShot.type === "HIT") {
         playSFX("sizzling-pan.mp3", soundEnabled, 0.8);
       } else if (recentShot.type === "MISS") {
         playSFX("waterdrop.mp3", soundEnabled, 0.6);
@@ -41,7 +39,6 @@ export default function GameBoard({
 
   const getOccupiedIndices = (startIndex, size, isHorizontal) => {
     if (startIndex === null || startIndex < 0 || startIndex >= 64) return null;
-
     let row = Math.floor(startIndex / 8);
     let col = startIndex % 8;
 
@@ -93,26 +90,25 @@ export default function GameBoard({
     setIsDragging(false);
   };
 
-  // Xử lý gim kính ngắm vitri.png trước khi thực sự bắn
   const handleOpponentCellClick = (index, status) => {
     if (!isMyTurn || status !== null || aimingIndex !== null) return;
-
-    // 1. Phát tiếng click ngắm bắn
     playSFX("pop.mp3", soundEnabled, 0.5);
-
-    // 2. Gim kính ngắm vào vị trí được chọn
     setAimingIndex(index);
-
-    // 3. Chờ 300ms để hiệu ứng ngắm bắn xuất hiện rồi mới bắn
     setTimeout(() => {
       onFireShot(index);
       setAimingIndex(null);
     }, 300);
   };
 
+  // Xác định xem có đang nổ quán không để rung màn hình
+  const isSunkExplosion = recentShot && recentShot.type === "SUNK";
+
   return (
     <div
-      className="relative w-full aspect-square max-w-[360px] bg-slate-900 rounded-2xl p-1 shadow-2xl border-2 border-slate-700 select-none touch-none overflow-visible"
+      // THÊM CLASS animate-shake VÀO KHUNG BÀN CỜ
+      className={`relative w-full aspect-square max-w-[360px] bg-slate-900 rounded-2xl p-1 shadow-2xl border-2 border-slate-700 select-none touch-none overflow-visible transition-transform ${
+        isSunkExplosion ? "animate-shake" : ""
+      }`}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
     >
@@ -140,7 +136,6 @@ export default function GameBoard({
                   ${cell && cell.shopId ? `outline outline-2 -outline-offset-2 ${SHOP_OUTLINE[cell.shopId] || "outline-yellow-400"}` : ""}
                 `}
               >
-                {/* Quán đã chốt đặt */}
                 {cell && cell.icon && (
                   <img
                     src={cell.icon}
@@ -149,7 +144,6 @@ export default function GameBoard({
                   />
                 )}
 
-                {/* Preview khi xếp quán */}
                 {!cell?.shopId && isPreview && (
                   <img
                     src={currentShopObj.icon}
@@ -158,7 +152,6 @@ export default function GameBoard({
                   />
                 )}
 
-                {/* Dấu Bắn Trúng trên quán */}
                 {cell?.shot === "HIT" && (
                   <img
                     src="/trung.png"
@@ -167,7 +160,6 @@ export default function GameBoard({
                   />
                 )}
 
-                {/* Dấu Bắn Trượt */}
                 {cell?.shot === "MISS" && (
                   <img
                     src="/khongtrung.png"
@@ -176,13 +168,24 @@ export default function GameBoard({
                   />
                 )}
 
-                {/* Floating Taunt Text khi nhà mình bị bắn */}
+                {/* 💥 HIỆU ỨNG GIF NỔ KHI QUÁN NHÀ MÌNH BỊ SẬP */}
+                {recentShot &&
+                  recentShot.index === index &&
+                  recentShot.type === "SUNK" && (
+                    <img
+                      src="/explosion.gif"
+                      alt="Explosion"
+                      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300%] h-[300%] object-contain z-50 pointer-events-none mix-blend-screen"
+                    />
+                  )}
+
+                {/* Floating Taunt Text */}
                 {recentShot && recentShot.index === index && (
                   <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-40 pointer-events-none whitespace-nowrap animate-float-up">
                     <span
                       className={`text-[11px] font-black px-2 py-0.5 rounded-full shadow-lg border uppercase ${
                         recentShot.type === "SUNK"
-                          ? "bg-purple-600 text-yellow-300 border-yellow-400"
+                          ? "bg-purple-600 text-yellow-300 border-yellow-400 scale-125 transition-transform"
                           : recentShot.type === "HIT"
                             ? "bg-red-600 text-white border-red-400"
                             : "bg-slate-800 text-blue-300 border-slate-600"
@@ -211,7 +214,6 @@ export default function GameBoard({
                   ${status === null ? "hover:bg-yellow-400/20 active:bg-yellow-400/30 cursor-pointer active:scale-90" : ""}
                 `}
               >
-                {/* 1. Kính ngắm khi Hover HOẶC khi đã Gim (aimingIndex) */}
                 {(status === null || isAiming) && (
                   <img
                     src="/vitri.png"
@@ -224,7 +226,6 @@ export default function GameBoard({
                   />
                 )}
 
-                {/* 2. Icon Bắn Trúng */}
                 {status === "HIT" && (
                   <img
                     src="/trung.png"
@@ -233,7 +234,6 @@ export default function GameBoard({
                   />
                 )}
 
-                {/* 3. Icon Bắn Trượt */}
                 {status === "MISS" && (
                   <img
                     src="/khongtrung.png"
@@ -242,13 +242,24 @@ export default function GameBoard({
                   />
                 )}
 
-                {/* 4. Floating Taunt Text khi mình bắn vào ô đối thủ */}
+                {/* 💥 HIỆU ỨNG GIF NỔ KHI MÌNH BẮN SẬP QUÁN ĐỐI THỦ */}
+                {recentShot &&
+                  recentShot.index === index &&
+                  recentShot.type === "SUNK" && (
+                    <img
+                      src="/explosion.gif"
+                      alt="Explosion"
+                      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350%] h-[350%] object-contain z-50 pointer-events-none mix-blend-screen"
+                    />
+                  )}
+
+                {/* Floating Taunt Text */}
                 {recentShot && recentShot.index === index && (
                   <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-40 pointer-events-none whitespace-nowrap animate-float-up">
                     <span
                       className={`text-[11px] font-black px-2 py-0.5 rounded-full shadow-lg border uppercase ${
                         recentShot.type === "SUNK"
-                          ? "bg-purple-600 text-yellow-300 border-yellow-400"
+                          ? "bg-purple-600 text-yellow-300 border-yellow-400 scale-125 transition-transform"
                           : recentShot.type === "HIT"
                             ? "bg-red-600 text-white border-red-400"
                             : "bg-slate-800 text-blue-300 border-slate-600"
@@ -263,7 +274,7 @@ export default function GameBoard({
           })}
       </div>
 
-      {/* Style Keyframes cho Floating Text */}
+      {/* Style Keyframes cho Floating Text & Rung Màn Hình */}
       <style>{`
         @keyframes floatUp {
           0% { opacity: 0; transform: translate(-50%, 0) scale(0.8); }
@@ -273,6 +284,18 @@ export default function GameBoard({
         }
         .animate-float-up {
           animation: floatUp 1.8s ease-out forwards;
+        }
+
+        /* Hiệu ứng rung giật khi nổ quán */
+        @keyframes shake {
+          0%, 100% { transform: translateX(0) translateY(0); }
+          20% { transform: translateX(-4px) translateY(2px) rotate(-1deg); }
+          40% { transform: translateX(4px) translateY(-2px) rotate(1deg); }
+          60% { transform: translateX(-4px) translateY(-2px) rotate(-1deg); }
+          80% { transform: translateX(4px) translateY(2px) rotate(1deg); }
+        }
+        .animate-shake {
+          animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both;
         }
       `}</style>
     </div>

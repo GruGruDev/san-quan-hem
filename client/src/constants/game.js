@@ -1,14 +1,22 @@
-export const APP_VERSION = "v1.1";
+export const APP_VERSION = "v1.2";
 
-export const SHOPS = [
+// 5 loại quán ăn trong hẻm
+export const ALL_SHOPS = [
   { id: "cavien", name: "Xe Cá Viên Chiên", size: 2, icon: "/cavienchien.png" },
   { id: "trasua", name: "Tiệm Trà Sữa", size: 3, icon: "/trasua.png" },
-  { id: "quannhau", name: "Quán Nhậu / Ốc", size: 4, icon: "/quannhau.png" },
+  { id: "bunrieu", name: "Gánh Bún Riêu", size: 3, icon: "/bunrieu.png" },
+  { id: "quanoc", name: "Quán Ốc Quen", size: 4, icon: "/donuong.png" },
+  { id: "quannhau", name: "Khu Nhậu Vỉa Hè", size: 5, icon: "/quannhau.png" },
 ];
+
+// Mặc định 3 quán chuẩn nếu không nhận được dữ liệu xoay từ Server
+export const SHOPS = ALL_SHOPS.slice(0, 3);
 
 export const SHOP_OUTLINE = {
   cavien: "outline-amber-400",
   trasua: "outline-pink-400",
+  bunrieu: "outline-orange-400",
+  quanoc: "outline-emerald-400",
   quannhau: "outline-red-400",
 };
 

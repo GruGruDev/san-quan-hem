@@ -120,12 +120,10 @@ app.post("/api/forgot-password", async (req, res) => {
 
     const user = await User.findOne({ username, displayName });
     if (!user) {
-      return res
-        .status(400)
-        .json({
-          message:
-            "Thông tin xác nhận không chính xác! Vui lòng kiểm tra lại Tên tài khoản và Biệt danh.",
-        });
+      return res.status(400).json({
+        message:
+          "Thông tin xác nhận không chính xác! Vui lòng kiểm tra lại Tên tài khoản và Biệt danh.",
+      });
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
@@ -281,12 +279,22 @@ io.on("connection", (socket) => {
     const userId = data.userId || null;
 
     if (waitingPlayer && waitingPlayer.socketId !== socket.id) {
+      // 🚨 FIX BUG: CHỐNG 1 TÀI KHOẢN TỰ GHÉP TRẬN ĐỂ CÀY RANK
+      if (userId && waitingPlayer.userId === userId) {
+        socket.emit(
+          "waiting_for_opponent",
+          "Phát hiện trùng tài khoản! Đang chờ phượt thủ khác...",
+        );
+        return; // Hủy việc ghép 2 máy này với nhau
+      }
+
       if (searchTimer) clearTimeout(searchTimer);
 
       const roomId = `room_${Date.now()}`;
       const player1 = waitingPlayer;
       const player2 = { socketId: socket.id, name: playerName, userId };
-      const roomShops = selectRandomShops(); // Lấy 3 quán ngẫu nhiên
+
+      const roomShops = selectRandomShops(); // Chọn ngẫu nhiên 3 quán (Map Rotation)
 
       activeRooms[roomId] = {
         players: {
@@ -324,6 +332,7 @@ io.on("connection", (socket) => {
         shops: roomShops,
         message: "Đã tìm thấy đối thủ!",
       });
+
       waitingPlayer = null;
     } else {
       waitingPlayer = { socket, socketId: socket.id, name: playerName, userId };

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { SHOPS, filterBadWords } from "../constants/game";
+import { SHOPS as DEFAULT_SHOPS, filterBadWords } from "../constants/game";
 
 export default function BottomPanel({
   gameState,
@@ -14,6 +14,7 @@ export default function BottomPanel({
   onReady,
   onSendChat,
   messages = [],
+  shops = DEFAULT_SHOPS, // NHẬN 3 QUÁN NGẪU NHIÊN TỪ APP TRUYỀN XUỐNG
 }) {
   const [chatInput, setChatInput] = useState("");
   const chatEndRef = useRef(null);
@@ -36,11 +37,13 @@ export default function BottomPanel({
   };
 
   const isSetup = gameState === "SETUP";
-  const currentShopObj = SHOPS.find((s) => s.id === selectedShop) || SHOPS[0];
 
-  // Kiểm tra số lượng quán đã đặt
+  // Dùng danh sách shops (3 quán của trận) thay vì DEFAULT_SHOPS
+  const currentShopObj = shops.find((s) => s.id === selectedShop) || shops[0];
+
+  // Kiểm tra số lượng quán đã đặt dựa trên 3 quán của trận đấu hiện tại
   const placedShopIds = new Set(myBoard.filter(Boolean).map((c) => c.shopId));
-  const isAllPlaced = SHOPS.every((s) => placedShopIds.has(s.id));
+  const isAllPlaced = shops.every((s) => placedShopIds.has(s.id));
 
   return (
     <div className="w-full max-w-md bg-slate-900 p-3 border-t border-slate-800 flex flex-col gap-2.5 rounded-b-2xl">
@@ -48,7 +51,8 @@ export default function BottomPanel({
         <div className="flex flex-col gap-2">
           {/* Thanh Chọn Quán Tinh Gọn */}
           <div className="flex gap-2 justify-center items-center bg-slate-950 p-2 rounded-xl border border-slate-800">
-            {SHOPS.map((shop) => {
+            {/* Render động 3 nút chọn quán */}
+            {shops.map((shop) => {
               const isPlaced = placedShopIds.has(shop.id);
               const isSelected = selectedShop === shop.id;
 
@@ -124,7 +128,7 @@ export default function BottomPanel({
         </div>
       )}
 
-      {/* Frame Chat Log (Mở rộng h-28 và tự cuộn trượt) */}
+      {/* Frame Chat Log */}
       <div className="bg-slate-950 rounded-2xl p-2.5 h-28 flex flex-col justify-between border border-slate-800 shadow-inner">
         <div className="overflow-y-auto flex-1 text-[12px] flex flex-col gap-1.5 pr-1 font-sans">
           {Array.isArray(messages) &&
@@ -145,7 +149,6 @@ export default function BottomPanel({
                 </span>
               </div>
             ))}
-          {/* Thẻ neo tự động cuộn đến tin nhắn mới nhất */}
           <div ref={chatEndRef} />
         </div>
 

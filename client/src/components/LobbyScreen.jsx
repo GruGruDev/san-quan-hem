@@ -8,6 +8,7 @@ export default function LobbyScreen({
   onOpenLeaderboard,
   onOpenAuth,
   onOpenDonate,
+  onOpenPrivateRoom,
   currentUser,
   onLogout,
 }) {
@@ -183,6 +184,13 @@ export default function LobbyScreen({
                     VÀO HẺM SĂN GÀ
                   </span>
                 </div>
+              </button>
+              <button
+                type="button"
+                onClick={onOpenPrivateRoom}
+                className="w-full py-2.5 bg-slate-900/90 hover:bg-slate-800 border border-amber-500/30 text-amber-300 font-black rounded-xl text-xs uppercase tracking-wider shadow backdrop-blur-md transition active:scale-95 flex items-center justify-center gap-1.5"
+              >
+                <span>🔑</span> TẠO PHÒNG / NHẬP MÃ HẺM
               </button>
             </form>
           </div>

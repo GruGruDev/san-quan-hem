@@ -509,6 +509,105 @@ io.on("connection", (socket) => {
       }
     }
   });
+  // --- CHẾ ĐỘ PHÒNG KÍN (MÃ HẺM) ---
+
+  // 1. Tạo phòng kín
+  socket.on("create_private_room", (data) => {
+    const playerName = data.name || "Phượt Thủ";
+    const userId = data.userId || null;
+
+    // Sinh Mã Hẻm 5 ký tự ngẫu nhiên (Ví dụ: HEM89)
+    const roomCode = Math.random().toString(36).substring(2, 7).toUpperCase();
+    const roomId = `private_${roomCode}`;
+    const roomShops = selectRandomShops();
+
+    activeRooms[roomId] = {
+      roomCode,
+      isPrivate: true,
+      players: {
+        [socket.id]: {
+          socketId: socket.id,
+          name: playerName,
+          userId,
+          team: "red",
+          board: [],
+          ready: false,
+        },
+      },
+      shops: roomShops,
+      gameState: "WAITING_FRIEND",
+      turn: null,
+      isBotRoom: false,
+    };
+
+    socket.join(roomId);
+    socket.emit("private_room_created", {
+      roomId,
+      roomCode,
+      message: `Đã tạo Hẻm Kín [${roomCode}]! Hãy gửi mã cho bạn bè.`,
+    });
+  });
+
+  // 2. Tham gia phòng kín bằng Mã Hẻm
+  socket.on("join_private_room", (data) => {
+    const playerName = data.name || "Phượt Thủ";
+    const userId = data.userId || null;
+    const roomCode = (data.roomCode || "").trim().toUpperCase();
+    const roomId = `private_${roomCode}`;
+
+    const room = activeRooms[roomId];
+
+    if (!room) {
+      socket.emit(
+        "join_private_error",
+        "Mã Hẻm không tồn tại hoặc đã giải tán!",
+      );
+      return;
+    }
+
+    if (Object.keys(room.players).length >= 2) {
+      socket.emit("join_private_error", "Hẻm này đã đủ 2 phượt thủ!");
+      return;
+    }
+
+    // Chống tự vào phòng kín của chính mình
+    const hostSocketId = Object.keys(room.players)[0];
+    if (userId && room.players[hostSocketId].userId === userId) {
+      socket.emit(
+        "join_private_error",
+        "Bạn không thể tự vào phòng kín của chính mình!",
+      );
+      return;
+    }
+
+    // Ghép người chơi thứ 2 vào
+    room.players[socket.id] = {
+      socketId: socket.id,
+      name: playerName,
+      userId,
+      team: "blue",
+      board: [],
+      ready: false,
+    };
+    room.gameState = "SETUP";
+
+    socket.join(roomId);
+
+    // Thông báo cho cả 2 người vào trận
+    io.to(hostSocketId).emit("match_found", {
+      roomId,
+      team: "red",
+      shops: room.shops,
+      message: "Bạn bè đã vào Hẻm! Sẵn sàng giăng bẫy!",
+    });
+
+    socket.emit("match_found", {
+      roomId,
+      team: "blue",
+      shops: room.shops,
+      message: "Đã vào Hẻm thành công! Bắt đầu xếp quán!",
+    });
+  });
 });
 
 server.listen(3001, () => {

@@ -22,6 +22,7 @@ import AuthModal from "./components/Modals/AuthModal";
 import DonateModal from "./components/Modals/DonateModal";
 import GuideModal from "./components/Modals/GuideModal";
 import LeaderboardModal from "./components/Modals/LeaderboardModal";
+import PrivateRoomModal from "./components/Modals/PrivateRoomModal";
 import SettingsModal from "./components/Modals/SettingsModal";
 
 // Kết nối Socket.IO tới Server Production
@@ -50,12 +51,12 @@ export default function App() {
   const [appLoading, setAppLoading] = useState(true);
   const [searching, setSearching] = useState(false);
 
-  const [gameState, setGameState] = useState("LOBBY");
+  const [gameState, setGameState] = useState("LOBBY"); // LOBBY | SETUP | PLAYING | FINISHED
   const [playerName, setPlayerName] = useState("");
   const [team, setTeam] = useState("red");
   const [roomId, setRoomId] = useState(null);
 
-  // Lưu danh sách 3 Quán ngẫu nhiên nhận từ Server
+  // Lưu danh sách 3 Quán ngẫu nhiên từ Server (Map Rotation)
   const [activeShops, setActiveShops] = useState(SHOPS);
 
   // Management State cho Setup & Bàn cờ
@@ -81,7 +82,11 @@ export default function App() {
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showDonateModal, setShowDonateModal] = useState(false);
 
-  // Khôi phục tài khoản
+  // State Phòng Kín (Mã Hẻm)
+  const [showPrivateModal, setShowPrivateModal] = useState(false);
+  const [createdRoomCode, setCreatedRoomCode] = useState(null);
+
+  // Khôi phục tài khoản đã đăng nhập
   useEffect(() => {
     const savedUser = localStorage.getItem("user");
     if (savedUser) {
@@ -93,14 +98,14 @@ export default function App() {
     }
   }, []);
 
-  // Rung Haptic
+  // Rung Haptic khi bị bắn
   useEffect(() => {
     if (vibrate && recentShot && window.navigator.vibrate) {
       window.navigator.vibrate([100, 50, 100]);
     }
   }, [recentShot, vibrate]);
 
-  // Quản lý BGM
+  // Quản lý Nhạc Nền (BGM)
   useEffect(() => {
     if (!soundEnabled) {
       stopBGM();
@@ -180,7 +185,6 @@ export default function App() {
     socket.connect();
 
     socket.on("match_found", (data) => {
-      // Nhận 3 quán ngẫu nhiên từ Server (Map Rotation)
       const roomShops = data.shops || SHOPS;
       setActiveShops(roomShops);
       resetGameData(roomShops);
@@ -189,6 +193,8 @@ export default function App() {
       setTeam(data.team);
       setGameState("SETUP");
       setSearching(false);
+      setShowPrivateModal(false);
+      setCreatedRoomCode(null);
       setMessages((prev) => [
         ...prev,
         { sender: "Hệ thống", text: data.message },
@@ -197,6 +203,15 @@ export default function App() {
 
     socket.on("waiting_for_opponent", (msg) => {
       setMessages((prev) => [...prev, { sender: "Hệ thống", text: msg }]);
+    });
+
+    socket.on("private_room_created", (data) => {
+      setCreatedRoomCode(data.roomCode);
+      setRoomId(data.roomId);
+    });
+
+    socket.on("join_private_error", (msg) => {
+      alert(msg);
     });
 
     socket.on("start_coin_flip", (data) => {
@@ -276,11 +291,15 @@ export default function App() {
       setGameState("LOBBY");
       setRoomId(null);
       setSearching(false);
+      setShowPrivateModal(false);
+      setCreatedRoomCode(null);
     });
 
     return () => {
       socket.off("match_found");
       socket.off("waiting_for_opponent");
+      socket.off("private_room_created");
+      socket.off("join_private_error");
       socket.off("start_coin_flip");
       socket.off("shot_result");
       socket.off("receive_chat");
@@ -291,7 +310,7 @@ export default function App() {
     };
   }, [activeShops]);
 
-  // --- HANDLERS ---
+  // --- HANDLERS TÌM TRẬN & PHÒNG KÍN ---
   const handleFindMatch = (name) => {
     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
     setPlayerName(name);
@@ -305,6 +324,31 @@ export default function App() {
     socket.emit("cancel_search");
   };
 
+  const handleCreatePrivateRoom = () => {
+    playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
+    socket.emit("create_private_room", {
+      name: currentUser?.displayName || playerName || "Phượt Thủ Hẻm",
+      userId: currentUser?.id,
+    });
+  };
+
+  const handleJoinPrivateRoom = (code) => {
+    playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
+    socket.emit("join_private_room", {
+      roomCode: code,
+      name: currentUser?.displayName || playerName || "Phượt Thủ Hẻm",
+      userId: currentUser?.id,
+    });
+  };
+
+  const handleCancelPrivateRoom = () => {
+    playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
+    setCreatedRoomCode(null);
+    setShowPrivateModal(false);
+    socket.emit("cancel_search");
+  };
+
+  // --- GAMEPLAY HANDLERS ---
   const handleRotate = () => {
     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
     const nextOrientation =
@@ -485,6 +529,10 @@ export default function App() {
                 playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
                 setShowDonateModal(true);
               }}
+              onOpenPrivateRoom={() => {
+                playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
+                setShowPrivateModal(true);
+              }}
               currentUser={currentUser}
               onLogout={handleLogout}
             />
@@ -596,7 +644,7 @@ export default function App() {
               onReady={handleReady}
               onSendChat={handleSendChat}
               messages={messages}
-              shops={activeShops} // TRUYỀN DANH SÁCH QUÁN XUỐNG BOTTOM PANEL
+              shops={activeShops}
             />
 
             {coinFlipResult && (
@@ -618,6 +666,7 @@ export default function App() {
           </>
         )}
 
+        {/* --- DÙNG CHUNG CÁC MODALS OVERLAY --- */}
         <SettingsModal
           isOpen={showSettings}
           onClose={() => setShowSettings(false)}
@@ -646,6 +695,17 @@ export default function App() {
         <DonateModal
           isOpen={showDonateModal}
           onClose={() => setShowDonateModal(false)}
+        />
+        <PrivateRoomModal
+          isOpen={showPrivateModal}
+          onClose={() => {
+            setShowPrivateModal(false);
+            setCreatedRoomCode(null);
+          }}
+          onCreateRoom={handleCreatePrivateRoom}
+          onJoinRoom={handleJoinPrivateRoom}
+          roomCodeCreated={createdRoomCode}
+          onCancelWaiting={handleCancelPrivateRoom}
         />
       </div>
     </div>

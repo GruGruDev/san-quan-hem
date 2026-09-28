@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { SHOPS as DEFAULT_SHOPS, SHOP_OUTLINE } from "../constants/game";
 import { playSFX } from "../utils/sound";
 
 export default function GameBoard({
   gameState,
   myBoard,
+  // eslint-disable-next-line no-unused-vars
   setMyBoard,
   opponentHits,
   selectedShop,
@@ -16,6 +17,8 @@ export default function GameBoard({
   recentShot,
   soundEnabled = true,
   shops = DEFAULT_SHOPS,
+  opponentAimingIndex, // Nhận từ App.jsx
+  onAimShot, // Nhận từ App.jsx
 }) {
   const isSetup = gameState === "SETUP";
   const isPlaying = gameState === "PLAYING";
@@ -23,19 +26,6 @@ export default function GameBoard({
   const [aimingIndex, setAimingIndex] = useState(null);
 
   const currentShopObj = shops.find((s) => s.id === selectedShop) || shops[0];
-
-  useEffect(() => {
-    if (recentShot) {
-      if (recentShot.type === "SUNK") {
-        // Cố tình đẩy âm thanh lớn hơn khi nổ quán
-        playSFX("sizzling-pan.mp3", soundEnabled, 1.0);
-      } else if (recentShot.type === "HIT") {
-        playSFX("sizzling-pan.mp3", soundEnabled, 0.8);
-      } else if (recentShot.type === "MISS") {
-        playSFX("waterdrop.mp3", soundEnabled, 0.6);
-      }
-    }
-  }, [recentShot, soundEnabled]);
 
   const getOccupiedIndices = (startIndex, size, isHorizontal) => {
     if (startIndex === null || startIndex < 0 || startIndex >= 64) return null;
@@ -94,18 +84,23 @@ export default function GameBoard({
     if (!isMyTurn || status !== null || aimingIndex !== null) return;
     playSFX("pop.mp3", soundEnabled, 0.5);
     setAimingIndex(index);
+
+    // 🎯 Phát tín hiệu cho đối thủ thấy kính ngắm
+    if (onAimShot) onAimShot(index);
+
+    // ⏳ Kéo dài thời gian ngắm lên 1000ms để tạo áp lực
     setTimeout(() => {
       onFireShot(index);
       setAimingIndex(null);
-    }, 300);
+    }, 1000);
   };
 
-  // Xác định xem có đang nổ quán không để rung màn hình
+  // Xác định xem có đang nổ quán không để rung màn hình toàn map
   const isSunkExplosion = recentShot && recentShot.type === "SUNK";
 
   return (
     <div
-      // THÊM CLASS animate-shake VÀO KHUNG BÀN CỜ
+      // RUNG TOÀN BÀN CỜ
       className={`relative w-full aspect-square max-w-[360px] bg-slate-900 rounded-2xl p-1 shadow-2xl border-2 border-slate-700 select-none touch-none overflow-visible transition-transform ${
         isSunkExplosion ? "animate-shake" : ""
       }`}
@@ -123,6 +118,7 @@ export default function GameBoard({
         {(isSetup || (isPlaying && !isMyTurn)) &&
           myBoard.map((cell, index) => {
             const isPreview = previewIndices?.includes(index);
+            const isOpponentAimingHere = opponentAimingIndex === index;
 
             return (
               <button
@@ -152,6 +148,15 @@ export default function GameBoard({
                   />
                 )}
 
+                {/* 🎯 HIỂN THỊ KÍNH NGẮM ĐỎ LÒM CỦA ĐỐI THỦ TRÊN SÂN NHÀ MÌNH */}
+                {isOpponentAimingHere && (
+                  <img
+                    src="/vitri.png"
+                    className="absolute inset-0 w-[120%] h-[120%] -left-[10%] -top-[10%] max-w-none object-contain z-30 animate-ping opacity-90 pointer-events-none drop-shadow-[0_0_8px_rgba(255,0,0,0.8)]"
+                    alt="Opponent Aiming"
+                  />
+                )}
+
                 {cell?.shot === "HIT" && (
                   <img
                     src="/trung.png"
@@ -168,18 +173,7 @@ export default function GameBoard({
                   />
                 )}
 
-                {/* 💥 HIỆU ỨNG GIF NỔ KHI QUÁN NHÀ MÌNH BỊ SẬP */}
-                {recentShot &&
-                  recentShot.index === index &&
-                  recentShot.type === "SUNK" && (
-                    <img
-                      src="/explosion.gif"
-                      alt="Explosion"
-                      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300%] h-[300%] object-contain z-50 pointer-events-none mix-blend-screen"
-                    />
-                  )}
-
-                {/* Floating Taunt Text */}
+                {/* Floating Taunt Text (Bị bắn) */}
                 {recentShot && recentShot.index === index && (
                   <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-40 pointer-events-none whitespace-nowrap animate-float-up">
                     <span
@@ -242,18 +236,7 @@ export default function GameBoard({
                   />
                 )}
 
-                {/* 💥 HIỆU ỨNG GIF NỔ KHI MÌNH BẮN SẬP QUÁN ĐỐI THỦ */}
-                {recentShot &&
-                  recentShot.index === index &&
-                  recentShot.type === "SUNK" && (
-                    <img
-                      src="/explosion.gif"
-                      alt="Explosion"
-                      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350%] h-[350%] object-contain z-50 pointer-events-none mix-blend-screen"
-                    />
-                  )}
-
-                {/* Floating Taunt Text */}
+                {/* Floating Taunt Text (Bắn đối thủ) */}
                 {recentShot && recentShot.index === index && (
                   <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-40 pointer-events-none whitespace-nowrap animate-float-up">
                     <span
@@ -274,6 +257,17 @@ export default function GameBoard({
           })}
       </div>
 
+      {/* 💥 VỤ NỔ TOÀN BÀN CỜ (MAP) ĐÈ LÊN MỌI THỨ KHI BẮN SẬP QUÁN */}
+      {isSunkExplosion && (
+        <div className="absolute inset-0 z-50 pointer-events-none flex items-center justify-center mix-blend-screen overflow-hidden rounded-xl">
+          <img
+            src="/explosion.gif"
+            alt="Boom"
+            className="w-[200%] h-[200%] max-w-none object-cover opacity-95"
+          />
+        </div>
+      )}
+
       {/* Style Keyframes cho Floating Text & Rung Màn Hình */}
       <style>{`
         @keyframes floatUp {
@@ -286,16 +280,14 @@ export default function GameBoard({
           animation: floatUp 1.8s ease-out forwards;
         }
 
-        /* Hiệu ứng rung giật khi nổ quán */
+        /* 💥 Hiệu ứng rung giật bạo lực và kéo dài 2.5 giây */
         @keyframes shake {
           0%, 100% { transform: translateX(0) translateY(0); }
-          20% { transform: translateX(-4px) translateY(2px) rotate(-1deg); }
-          40% { transform: translateX(4px) translateY(-2px) rotate(1deg); }
-          60% { transform: translateX(-4px) translateY(-2px) rotate(-1deg); }
-          80% { transform: translateX(4px) translateY(2px) rotate(1deg); }
+          5%, 15%, 25%, 35%, 45%, 55%, 65%, 75%, 85%, 95% { transform: translateX(-8px) translateY(5px) rotate(-1.5deg); }
+          10%, 20%, 30%, 40%, 50%, 60%, 70%, 80%, 90% { transform: translateX(8px) translateY(-5px) rotate(1.5deg); }
         }
         .animate-shake {
-          animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both;
+          animation: shake 2.5s cubic-bezier(.36,.07,.19,.97) both;
         }
       `}</style>
     </div>

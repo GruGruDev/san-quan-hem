@@ -1,3 +1,5 @@
+require("dotenv").config();
+
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -7,27 +9,26 @@ const jwt = require("jsonwebtoken");
 const cors = require("cors");
 const User = require("./models/User");
 
+// --- BÍ MẬT LẤY TỪ BIẾN MÔI TRƯỜNG (.env / Render Dashboard) ---
+const { MONGO_URI, JWT_SECRET } = process.env;
+if (!MONGO_URI || !JWT_SECRET) {
+  console.error(
+    "❌ Thiếu MONGO_URI hoặc JWT_SECRET trong .env / biến môi trường!",
+  );
+  process.exit(1);
+}
+
+const ALLOWED_ORIGINS = [
+  "https://san-quan-hem.vercel.app",
+  "http://localhost:5173",
+  "http://localhost:3000",
+];
+
 const app = express();
 app.use(express.json());
-
-// Cấu hình CORS cho Express API
-app.use(
-  cors({
-    origin: [
-      "https://san-quan-hem.vercel.app",
-      "http://localhost:5173",
-      "http://localhost:3000",
-    ],
-    credentials: true,
-  }),
-);
-
-const JWT_SECRET = "san_quan_hem_secret_key_2026";
+app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
 
 // --- KẾT NỐI MONGODB ATLAS CLOUD ---
-const MONGO_URI =
-  "mongodb+srv://nguyentritai210804_db_user:d4zu1sedq4QrFzPS@cluster0.dsgcdd4.mongodb.net/san_quan_hem?retryWrites=true&w=majority";
-
 mongoose
   .connect(MONGO_URI)
   .then(() => console.log("✅ Đã kết nối MongoDB Atlas Cloud thành công!"))
@@ -155,14 +156,7 @@ app.get("/api/leaderboard", async (req, res) => {
 // --- GAME SOCKET.IO LOGIC ---
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: {
-    origin: [
-      "https://san-quan-hem.vercel.app",
-      "http://localhost:5173",
-      "http://localhost:3000",
-    ],
-    methods: ["GET", "POST"],
-  },
+  cors: { origin: ALLOWED_ORIGINS, methods: ["GET", "POST"] },
 });
 
 let waitingPlayer = null;
@@ -224,6 +218,44 @@ const generateBotBoard = (shops) => {
   return board;
 };
 
+// HÀM 3: Kiểm tra & làm sạch sơ đồ do client gửi lên.
+// - Đúng 3 quán của phòng, đúng số ô, nằm thẳng hàng liền nhau (ngang hoặc dọc)
+// - Xây lại bàn cờ từ đầu để loại bỏ mọi cờ "shot" do client tự gắn
+const sanitizeBoard = (board, shops) => {
+  if (!Array.isArray(board) || board.length !== 64) return null;
+
+  const clean = Array(64).fill(null);
+  const indicesByShop = {};
+
+  for (let i = 0; i < 64; i++) {
+    const cell = board[i];
+    if (cell === null || cell === undefined) continue;
+
+    const shop = shops.find((s) => s.id === cell.shopId);
+    if (!shop) return null;
+
+    if (!indicesByShop[shop.id]) indicesByShop[shop.id] = [];
+    indicesByShop[shop.id].push(i);
+    clean[i] = { shopId: shop.id, icon: shop.icon, name: shop.name };
+  }
+
+  for (const shop of shops) {
+    const idxs = indicesByShop[shop.id];
+    if (!idxs || idxs.length !== shop.size) return null;
+
+    const first = idxs[0];
+    const last = idxs[idxs.length - 1];
+    const isHorizontal =
+      Math.floor(first / 8) === Math.floor(last / 8) &&
+      idxs.every((v, k) => k === 0 || v === idxs[k - 1] + 1);
+    const isVertical = idxs.every((v, k) => k === 0 || v === idxs[k - 1] + 8);
+
+    if (!isHorizontal && !isVertical) return null;
+  }
+
+  return clean;
+};
+
 const triggerBotShot = (roomId) => {
   const room = activeRooms[roomId];
   if (!room || room.gameState !== "PLAYING" || room.turn !== room.botSocketId)
@@ -243,38 +275,67 @@ const triggerBotShot = (roomId) => {
     availableIndices[Math.floor(Math.random() * availableIndices.length)];
   const targetCell = playerBoard[targetIndex];
 
-  const isHit = targetCell && targetCell.shopId !== undefined;
-  let sunkShopId = null;
+  // 🎯 PHÁT TÍN HIỆU KÍNH NGẮM CHO NGƯỜI CHƠI THẤY
+  io.to(playerSocketId).emit("opponent_aiming", targetIndex);
 
-  if (isHit) {
-    targetCell.shot = "HIT";
-    const shopId = targetCell.shopId;
-    const sameShopCells = playerBoard.filter((c) => c && c.shopId === shopId);
-    if (sameShopCells.every((c) => c.shot === "HIT")) sunkShopId = shopId;
-  } else {
-    if (playerBoard[targetIndex]) playerBoard[targetIndex].shot = "MISS";
-    else playerBoard[targetIndex] = { shot: "MISS" };
-  }
+  // ⏳ Đợi 1 giây (1000ms) để tạo áp lực tâm lý rồi mới bóp cò
+  setTimeout(() => {
+    // Kéo dữ liệu room lại một lần nữa để tránh lỗi nếu người chơi thoát game trong lúc Bot đang ngắm
+    const currentRoom = activeRooms[roomId];
+    if (!currentRoom || currentRoom.gameState !== "PLAYING") return;
 
-  const nextTurn = isHit ? room.botSocketId : playerSocketId;
-  room.turn = nextTurn;
+    const isHit = !!(targetCell && targetCell.shopId !== undefined);
+    let sunkShopId = null;
 
-  io.to(roomId).emit("shot_result", {
-    shooter: room.botSocketId,
-    targetIndex,
-    isHit,
-    sunkShopId,
-    nextTurn,
+    if (isHit) {
+      targetCell.shot = "HIT";
+      const shopId = targetCell.shopId;
+      const sameShopCells = playerBoard.filter((c) => c && c.shopId === shopId);
+      if (sameShopCells.every((c) => c.shot === "HIT")) sunkShopId = shopId;
+    } else {
+      playerBoard[targetIndex] = { shot: "MISS" };
+    }
+
+    const nextTurn = isHit ? currentRoom.botSocketId : playerSocketId;
+    currentRoom.turn = nextTurn;
+
+    io.to(roomId).emit("shot_result", {
+      shooter: currentRoom.botSocketId,
+      targetIndex,
+      isHit,
+      sunkShopId,
+      nextTurn,
+    });
+
+    // Kiểm tra xem Bot đã thắng chưa
+    if (
+      playerBoard.every((cell) => !cell || !cell.shopId || cell.shot === "HIT")
+    ) {
+      currentRoom.gameState = "FINISHED";
+      io.to(roomId).emit("game_over", { winner: currentRoom.botSocketId });
+    } else if (isHit && nextTurn === currentRoom.botSocketId) {
+      // Nếu bắn trúng, Bot được bắn tiếp sau 2.5 giây
+      setTimeout(() => triggerBotShot(roomId), 2500);
+    }
+  }, 1000);
+};
+
+// Đưa phòng về trạng thái xếp quán cho ván tái đấu (bốc lại 3 quán mới)
+const resetRoomForRematch = (room) => {
+  room.shops = selectRandomShops();
+  room.gameState = "SETUP";
+  room.turn = null;
+
+  Object.values(room.players).forEach((p) => {
+    p.rematch = false;
+    if (room.isBotRoom && p.socketId === room.botSocketId) {
+      p.board = generateBotBoard(room.shops);
+      p.ready = true;
+    } else {
+      p.board = [];
+      p.ready = false;
+    }
   });
-
-  if (
-    playerBoard.every((cell) => !cell || !cell.shopId || cell.shot === "HIT")
-  ) {
-    room.gameState = "FINISHED";
-    io.to(roomId).emit("game_over", { winner: room.botSocketId });
-  } else if (isHit && nextTurn === room.botSocketId) {
-    setTimeout(() => triggerBotShot(roomId), 2500);
-  }
 };
 
 // --- CHÍNH TẮC SOCKET CONNECTION SCOPE ---
@@ -282,9 +343,12 @@ io.on("connection", (socket) => {
   console.log(`🔌 Người chơi kết nối: ${socket.id}`);
 
   // Tìm đối thủ ghép ngẫu nhiên
-  socket.on("tim_doi_thu", (data) => {
+  socket.on("tim_doi_thu", (data = {}) => {
     const playerName = data.name || "Phượt Thủ";
     const userId = data.userId || null;
+
+    // Đang chờ rồi thì bỏ qua, tránh tạo thêm timer thừa
+    if (waitingPlayer && waitingPlayer.socketId === socket.id) return;
 
     if (waitingPlayer && waitingPlayer.socketId !== socket.id) {
       if (userId && waitingPlayer.userId === userId) {
@@ -306,7 +370,9 @@ io.on("connection", (socket) => {
       activeRooms[roomId] = {
         players: {
           [player1.socketId]: {
-            ...player1,
+            socketId: player1.socketId,
+            name: player1.name,
+            userId: player1.userId,
             team: "red",
             board: [],
             ready: false,
@@ -395,10 +461,22 @@ io.on("connection", (socket) => {
       if (searchTimer) clearTimeout(searchTimer);
       waitingPlayer = null;
     }
+
+    // Hủy luôn Hẻm Kín đang chờ bạn bè (nếu có) để không ai vào nhầm phòng đã hủy
+    for (const [rid, r] of Object.entries(activeRooms)) {
+      if (
+        r.isPrivate &&
+        r.gameState === "WAITING_FRIEND" &&
+        r.players[socket.id]
+      ) {
+        socket.leave(rid);
+        delete activeRooms[rid];
+      }
+    }
   });
 
   // --- CHẾ ĐỘ PHÒNG KÍN (MÃ HẺM) ---
-  socket.on("create_private_room", (data) => {
+  socket.on("create_private_room", (data = {}) => {
     const playerName = data.name || "Phượt Thủ";
     const userId = data.userId || null;
 
@@ -434,7 +512,7 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("join_private_room", (data) => {
+  socket.on("join_private_room", (data = {}) => {
     const playerName = data.name || "Phượt Thủ";
     const userId = data.userId || null;
 
@@ -493,7 +571,7 @@ io.on("connection", (socket) => {
   });
 
   // Chốt vị trí quán (Sẵn sàng)
-  socket.on("ready_place_shops", ({ roomId, playerBoard }) => {
+  socket.on("ready_place_shops", ({ roomId, playerBoard } = {}) => {
     let room = activeRooms[roomId];
 
     // Tự động tìm lại room nếu roomId bị sai lệch / nhầm lẫn
@@ -515,7 +593,19 @@ io.on("connection", (socket) => {
       return;
     }
 
-    room.players[socket.id].board = playerBoard;
+    // Chỉ được chốt sơ đồ ở giai đoạn xếp quán — không đổi bàn cờ giữa trận
+    if (room.gameState !== "SETUP") return;
+
+    const cleanBoard = sanitizeBoard(playerBoard, room.shops);
+    if (!cleanBoard) {
+      socket.emit(
+        "board_rejected",
+        "Sơ đồ quán không hợp lệ! Hãy xếp đủ các quán rồi chốt lại.",
+      );
+      return;
+    }
+
+    room.players[socket.id].board = cleanBoard;
     room.players[socket.id].ready = true;
 
     // Kiểm tra tất cả người chơi trong phòng đã bấm ready chưa
@@ -536,16 +626,21 @@ io.on("connection", (socket) => {
   });
 
   // Bắn đạn
-  socket.on("fire_shot", async ({ roomId, targetIndex }) => {
+  socket.on("fire_shot", async ({ roomId, targetIndex } = {}) => {
     const room = activeRooms[roomId];
     if (!room || room.gameState !== "PLAYING" || room.turn !== socket.id)
+      return;
+    if (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex > 63)
       return;
 
     const opponentId = Object.keys(room.players).find((id) => id !== socket.id);
     const opponentBoard = room.players[opponentId].board;
     const targetCell = opponentBoard[targetIndex];
 
-    const isHit = targetCell && targetCell.shopId !== undefined;
+    // Ô đã bắn rồi thì bỏ qua (chặn spam ô trúng để ăn thêm lượt vô hạn)
+    if (targetCell && targetCell.shot) return;
+
+    const isHit = !!(targetCell && targetCell.shopId !== undefined);
     let sunkShopId = null;
 
     if (isHit) {
@@ -555,6 +650,8 @@ io.on("connection", (socket) => {
         (c) => c && c.shopId === shopId,
       );
       if (sameShopCells.every((c) => c.shot === "HIT")) sunkShopId = shopId;
+    } else {
+      opponentBoard[targetIndex] = { shot: "MISS" };
     }
 
     const nextTurn = isHit ? socket.id : opponentId;
@@ -596,13 +693,62 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Chat
-  socket.on("send_chat", ({ roomId, text }) => {
+  // Truyền tín hiệu ghim vị trí ngắm bắn cho đối thủ
+  socket.on("aim_shot", ({ roomId, targetIndex } = {}) => {
     const room = activeRooms[roomId];
-    if (room && room.players[socket.id]) {
+    if (!room || room.gameState !== "PLAYING" || room.turn !== socket.id)
+      return;
+
+    // Gửi vị trí ngắm cho người còn lại trong phòng
+    socket.to(roomId).emit("opponent_aiming", targetIndex);
+  });
+
+  // Tái đấu
+  socket.on("request_rematch", ({ roomId } = {}) => {
+    const room = activeRooms[roomId];
+    if (!room || !room.players[socket.id] || room.gameState !== "FINISHED")
+      return;
+
+    room.players[socket.id].rematch = true;
+
+    const humans = Object.values(room.players).filter(
+      (p) => !(room.isBotRoom && p.socketId === room.botSocketId),
+    );
+
+    // Phòng đấu Bot: Bot luôn đồng ý. Phòng người: cần cả hai bấm.
+    if (humans.every((p) => p.rematch)) {
+      resetRoomForRematch(room);
+      io.to(roomId).emit("rematch_accepted", {
+        message: "Cả hai cùng chọn chơi lại! Hãy đặt lại quán ăn!",
+        shops: room.shops,
+      });
+    } else {
+      socket
+        .to(roomId)
+        .emit(
+          "opponent_requested_rematch",
+          "Đối thủ muốn tái đấu! Nhấn Chơi Lại để tham gia.",
+        );
+    }
+  });
+
+  // Rời phòng chủ động (về sảnh) — báo đối thủ và giải tán phòng
+  socket.on("leave_room", ({ roomId } = {}) => {
+    const room = activeRooms[roomId];
+    if (!room || !room.players[socket.id]) return;
+
+    socket.leave(roomId);
+    socket.to(roomId).emit("opponent_left", "Đối thủ đã rời hẻm!");
+    delete activeRooms[roomId];
+  });
+
+  // Chat
+  socket.on("send_chat", ({ roomId, text } = {}) => {
+    const room = activeRooms[roomId];
+    if (room && room.players[socket.id] && typeof text === "string") {
       io.to(roomId).emit("receive_chat", {
         sender: room.players[socket.id].name,
-        text,
+        text: text.slice(0, 200),
       });
     }
   });
@@ -636,6 +782,7 @@ io.on("connection", (socket) => {
   });
 });
 
-server.listen(3001, () => {
-  console.log("🚀 Server running on port 3001");
+const PORT = process.env.PORT || 3001;
+server.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
 });

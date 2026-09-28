@@ -41,7 +41,6 @@ export default function App() {
   const [showTaunt, setShowTaunt] = useState(true);
   const [vibrate, setVibrate] = useState(true);
 
-  // Ref giữ cài đặt âm thanh mới nhất cho Socket Listener mà KHÔNG làm re-connect socket
   const soundRef = useRef({ soundEnabled, sfxVolume });
   useEffect(() => {
     soundRef.current = { soundEnabled, sfxVolume };
@@ -51,10 +50,13 @@ export default function App() {
   const [appLoading, setAppLoading] = useState(true);
   const [searching, setSearching] = useState(false);
 
-  const [gameState, setGameState] = useState("LOBBY"); // LOBBY | SETUP | PLAYING | FINISHED
+  const [gameState, setGameState] = useState("LOBBY");
   const [playerName, setPlayerName] = useState("");
-  const [team, setTeam] = useState("red"); // 'red' | 'blue'
+  const [team, setTeam] = useState("red");
   const [roomId, setRoomId] = useState(null);
+
+  // Lưu danh sách 3 Quán ngẫu nhiên nhận từ Server
+  const [activeShops, setActiveShops] = useState(SHOPS);
 
   // Management State cho Setup & Bàn cờ
   const [selectedShop, setSelectedShop] = useState(SHOPS[0]?.id || "cavien");
@@ -79,7 +81,7 @@ export default function App() {
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showDonateModal, setShowDonateModal] = useState(false);
 
-  // Khôi phục tài khoản đăng nhập
+  // Khôi phục tài khoản
   useEffect(() => {
     const savedUser = localStorage.getItem("user");
     if (savedUser) {
@@ -91,20 +93,19 @@ export default function App() {
     }
   }, []);
 
-  // Rung Haptic trên điện thoại khi bị bắn
+  // Rung Haptic
   useEffect(() => {
     if (vibrate && recentShot && window.navigator.vibrate) {
       window.navigator.vibrate([100, 50, 100]);
     }
   }, [recentShot, vibrate]);
 
-  // Quản lý BGM theo màn hình
+  // Quản lý BGM
   useEffect(() => {
     if (!soundEnabled) {
       stopBGM();
       return;
     }
-
     if (gameState === "LOBBY") {
       playBGM("lofi.mp3", soundEnabled, bgmVolume);
     } else if (gameState === "SETUP" || gameState === "PLAYING") {
@@ -134,7 +135,6 @@ export default function App() {
 
   const autoFireRandomShot = () => {
     if (!isMyTurn || gameState !== "PLAYING" || recentShot !== null) return;
-
     const availableIndices = opponentHits
       .map((status, idx) => (status === null ? idx : null))
       .filter((idx) => idx !== null);
@@ -162,10 +162,10 @@ export default function App() {
     return () => clearInterval(timer);
   }, [gameState, turnTimeLeft, isMyTurn, opponentHits, recentShot]);
 
-  const resetGameData = () => {
+  const resetGameData = (newShops = activeShops) => {
     setMyBoard(Array(64).fill(null));
     setOpponentHits(Array(64).fill(null));
-    setSelectedShop(SHOPS[0]?.id || "cavien");
+    setSelectedShop(newShops[0]?.id || "cavien");
     setOrientation("HORIZONTAL");
     setPreviewIndex(null);
     setIsMyTurn(false);
@@ -175,12 +175,16 @@ export default function App() {
     setTurnTimeLeft(20);
   };
 
-  // --- SOCKET LISTENERS (KHÔNG MẮC LỖI KHỞI TẠO LẠI KHI THAY ĐỔI SOUND) ---
+  // --- SOCKET LISTENERS ---
   useEffect(() => {
     socket.connect();
 
     socket.on("match_found", (data) => {
-      resetGameData();
+      // Nhận 3 quán ngẫu nhiên từ Server (Map Rotation)
+      const roomShops = data.shops || SHOPS;
+      setActiveShops(roomShops);
+      resetGameData(roomShops);
+
       setRoomId(data.roomId);
       setTeam(data.team);
       setGameState("SETUP");
@@ -218,11 +222,7 @@ export default function App() {
       const textList = TAUNT_TEXTS[type] || TAUNT_TEXTS.MISS;
       const randomText = textList[Math.floor(Math.random() * textList.length)];
 
-      setRecentShot({
-        index: data.targetIndex,
-        type,
-        text: randomText,
-      });
+      setRecentShot({ index: data.targetIndex, type, text: randomText });
 
       if (isMeShooter) {
         setOpponentHits((prev) => {
@@ -263,7 +263,7 @@ export default function App() {
     });
 
     socket.on("rematch_accepted", (data) => {
-      resetGameData();
+      resetGameData(activeShops);
       setGameState("SETUP");
       setMessages((prev) => [
         ...prev,
@@ -289,7 +289,7 @@ export default function App() {
       socket.off("opponent_left");
       socket.disconnect();
     };
-  }, []);
+  }, [activeShops]);
 
   // --- HANDLERS ---
   const handleFindMatch = (name) => {
@@ -311,7 +311,7 @@ export default function App() {
       orientation === "HORIZONTAL" ? "VERTICAL" : "HORIZONTAL";
     setOrientation(nextOrientation);
 
-    const currentShopObj = SHOPS.find((s) => s.id === selectedShop);
+    const currentShopObj = activeShops.find((s) => s.id === selectedShop);
     if (!currentShopObj) return;
 
     const placedIndex = myBoard.findIndex(
@@ -343,7 +343,6 @@ export default function App() {
         const newBoard = myBoard.map((cell) =>
           cell && cell.shopId === selectedShop ? null : cell,
         );
-
         newIndices.forEach((idx) => {
           newBoard[idx] = {
             shopId: currentShopObj.id,
@@ -351,7 +350,6 @@ export default function App() {
             name: currentShopObj.name,
           };
         });
-
         setMyBoard(newBoard);
         setPreviewIndex(adjustedIndex);
       }
@@ -362,7 +360,8 @@ export default function App() {
     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
     if (previewIndex === null) return;
 
-    const currentShopObj = SHOPS.find((s) => s.id === selectedShop) || SHOPS[0];
+    const currentShopObj =
+      activeShops.find((s) => s.id === selectedShop) || activeShops[0];
     const size = currentShopObj.size;
     const isHorizontal = orientation === "HORIZONTAL";
 
@@ -387,7 +386,6 @@ export default function App() {
       const newBoard = myBoard.map((cell) =>
         cell && cell.shopId === selectedShop ? null : cell,
       );
-
       indices.forEach((idx) => {
         newBoard[idx] = {
           shopId: currentShopObj.id,
@@ -395,13 +393,12 @@ export default function App() {
           name: currentShopObj.name,
         };
       });
-
       setMyBoard(newBoard);
 
       const placedShopIds = new Set(
         newBoard.filter(Boolean).map((c) => c.shopId),
       );
-      const nextShop = SHOPS.find((s) => !placedShopIds.has(s.id));
+      const nextShop = activeShops.find((s) => !placedShopIds.has(s.id));
       if (nextShop) {
         setSelectedShop(nextShop.id);
       }
@@ -457,15 +454,13 @@ export default function App() {
     };
   };
 
-  // --- RENDER LOGIC ---
-  if (appLoading) {
+  // --- RENDER ---
+  if (appLoading)
     return <LoadingScreen onFinish={() => setAppLoading(false)} />;
-  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-2 select-none font-sans">
       <div className="w-full max-w-md bg-slate-900 rounded-3xl shadow-2xl overflow-hidden border-4 border-slate-800 flex flex-col h-[850px] max-h-screen relative">
-        {/* RENDER MÀN HÌNH CHÍNH HOẶC MÀN HÌNH IN-GAME */}
         {gameState === "LOBBY" ? (
           <>
             <LobbyScreen
@@ -517,16 +512,12 @@ export default function App() {
                       🏠 QUÁN BẠN
                     </span>
                     <div className="flex gap-1.5">
-                      {SHOPS.map((s) => {
+                      {activeShops.map((s) => {
                         const health = getShopHealth(s.id);
                         return (
                           <div
                             key={`my-hud-${s.id}`}
-                            className={`relative w-9 h-9 rounded-xl p-0.5 border flex items-center justify-center transition-all ${
-                              health.isSunk
-                                ? "bg-red-950/70 border-red-700 opacity-40 grayscale"
-                                : "bg-slate-800 border-slate-700 shadow"
-                            }`}
+                            className={`relative w-9 h-9 rounded-xl p-0.5 border flex items-center justify-center transition-all ${health.isSunk ? "bg-red-950/70 border-red-700 opacity-40 grayscale" : "bg-slate-800 border-slate-700 shadow"}`}
                           >
                             <img
                               src={s.icon}
@@ -558,16 +549,14 @@ export default function App() {
                       🎯 ĐỐI THỦ
                     </span>
                     <div className="flex gap-1.5">
-                      {SHOPS.map((s) => {
-                        return (
-                          <div
-                            key={`opp-hud-${s.id}`}
-                            className="w-9 h-9 rounded-xl p-0.5 border bg-slate-800/80 border-slate-700/80 flex items-center justify-center text-xs font-bold text-slate-400 shadow"
-                          >
-                            ❓
-                          </div>
-                        );
-                      })}
+                      {activeShops.map((s) => (
+                        <div
+                          key={`opp-hud-${s.id}`}
+                          className="w-9 h-9 rounded-xl p-0.5 border bg-slate-800/80 border-slate-700/80 flex items-center justify-center text-xs font-bold text-slate-400 shadow"
+                        >
+                          ❓
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -607,6 +596,7 @@ export default function App() {
               onReady={handleReady}
               onSendChat={handleSendChat}
               messages={messages}
+              shops={activeShops} // TRUYỀN DANH SÁCH QUÁN XUỐNG BOTTOM PANEL
             />
 
             {coinFlipResult && (
@@ -618,7 +608,6 @@ export default function App() {
                 }}
               />
             )}
-
             {gameState === "FINISHED" && (
               <ResultScreen
                 isWinner={winner === socket.id}
@@ -629,7 +618,6 @@ export default function App() {
           </>
         )}
 
-        {/* --- DÙNG CHUNG TẤT CẢ MODALS OVERLAY BÊN TRÊN TOÀN BỘ GAME --- */}
         <SettingsModal
           isOpen={showSettings}
           onClose={() => setShowSettings(false)}

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { APP_VERSION } from "../constants/game";
+import { APP_VERSION, getPlayerRank } from "../constants/game";
 
 export default function LobbyScreen({
   onFindMatch,
@@ -11,6 +11,9 @@ export default function LobbyScreen({
   onLogout,
 }) {
   const [nameInput, setNameInput] = useState("");
+
+  const userWins = currentUser?.wins || 0;
+  const userRank = getPlayerRank(userWins);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -109,15 +112,18 @@ export default function LobbyScreen({
             {currentUser ? (
               <div className="bg-slate-950/80 border-2 border-amber-500/40 rounded-2xl p-3 flex items-center justify-between backdrop-blur-md shadow-lg">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-base">
-                    🛵
+                  {/* Icon Rank Hẻm */}
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-xl shadow-inner">
+                    {userRank.icon}
                   </div>
                   <div className="flex flex-col text-left">
                     <span className="text-xs font-black text-amber-100">
                       {currentUser.displayName}
                     </span>
-                    <span className="text-[10px] text-emerald-400 font-bold">
-                      Thắng: {currentUser.wins || 0} trận
+                    <span
+                      className={`text-[10px] font-black uppercase tracking-wider ${userRank.color}`}
+                    >
+                      {userRank.title} ({userWins} Thắng)
                     </span>
                   </div>
                 </div>

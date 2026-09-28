@@ -9,7 +9,18 @@ const User = require("./models/User");
 
 const app = express();
 app.use(express.json());
-app.use(cors());
+
+// Cấu hình CORS cho Express API
+app.use(
+  cors({
+    origin: [
+      "https://san-quan-hem.vercel.app",
+      "http://localhost:5173",
+      "http://localhost:3000",
+    ],
+    credentials: true,
+  }),
+);
 
 const JWT_SECRET = "san_quan_hem_secret_key_2026";
 
@@ -101,7 +112,39 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
-// API Lấy Bảng Xếp Hạng Realtime (Có bọc an toàn Fallback)
+// API Quên / Đặt lại mật khẩu
+app.post("/api/forgot-password", async (req, res) => {
+  try {
+    const { username, displayName, newPassword } = req.body;
+
+    if (!username || !displayName || !newPassword) {
+      return res
+        .status(400)
+        .json({ message: "Vui lòng nhập đầy đủ thông tin!" });
+    }
+
+    const user = await User.findOne({ username, displayName });
+    if (!user) {
+      return res.status(400).json({
+        message:
+          "Thông tin xác nhận không chính xác! Vui lòng kiểm tra lại Tên tài khoản và Biệt danh.",
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+    await user.save();
+
+    res.json({
+      message: "Đặt lại mật khẩu thành công! Bạn có thể đăng nhập ngay.",
+    });
+  } catch (err) {
+    console.error("Forgot Password Error:", err);
+    res.status(500).json({ message: "Lỗi máy chủ!" });
+  }
+});
+
+// API Lấy Bảng Xếp Hạng Realtime
 app.get("/api/leaderboard", async (req, res) => {
   try {
     if (mongoose.connection.readyState !== 1) {
@@ -122,11 +165,126 @@ app.get("/api/leaderboard", async (req, res) => {
 // --- GAME SOCKET.IO LOGIC ---
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: "*" },
+  cors: {
+    origin: [
+      "https://san-quan-hem.vercel.app",
+      "http://localhost:5173",
+      "http://localhost:3000",
+    ],
+    methods: ["GET", "POST"],
+  },
 });
 
 let waitingPlayer = null;
+let searchTimer = null;
 const activeRooms = {};
+
+// Hàm sinh sơ đồ 5 quán ngẫu nhiên cho Bot AI
+const generateBotBoard = () => {
+  const board = Array(64).fill(null);
+  const shops = [
+    { id: "quannhau", size: 5, icon: "/quannhau.png", name: "Khu Nhậu Vỉa Hè" },
+    { id: "quanoc", size: 4, icon: "/donuong.png", name: "Quán Ốc Quen" },
+    { id: "trasua", size: 3, icon: "/trasua.png", name: "Tiệm Trà Sữa" },
+    { id: "bunrieu", size: 3, icon: "/bunrieu.png", name: "Gánh Bún Riêu" },
+    {
+      id: "cavien",
+      size: 2,
+      icon: "/cavienchien.png",
+      name: "Xe Cá Viên Chiên",
+    },
+  ];
+
+  shops.forEach((shop) => {
+    let placed = false;
+    while (!placed) {
+      const isHorizontal = Math.random() < 0.5;
+      const startIndex = Math.floor(Math.random() * 64);
+      let row = Math.floor(startIndex / 8);
+      let col = startIndex % 8;
+
+      if (isHorizontal && col + shop.size > 8) col = 8 - shop.size;
+      if (!isHorizontal && row + shop.size > 8) row = 8 - shop.size;
+
+      const adjustedIndex = row * 8 + col;
+      const indices = [];
+      for (let i = 0; i < shop.size; i++) {
+        indices.push(isHorizontal ? adjustedIndex + i : adjustedIndex + i * 8);
+      }
+
+      const isOverlap = indices.some((idx) => board[idx] !== null);
+      if (!isOverlap) {
+        indices.forEach((idx) => {
+          board[idx] = { shopId: shop.id, icon: shop.icon, name: shop.name };
+        });
+        placed = true;
+      }
+    }
+  });
+
+  return board;
+};
+
+// Hàm xử lý Bot tự ngắm bắn
+const triggerBotShot = (roomId) => {
+  const room = activeRooms[roomId];
+  if (!room || room.gameState !== "PLAYING" || room.turn !== room.botSocketId)
+    return;
+
+  const playerSocketId = Object.keys(room.players).find(
+    (id) => id !== room.botSocketId,
+  );
+  const playerBoard = room.players[playerSocketId].board;
+
+  // Lọc lấy danh sách các ô người chơi chưa bị bắn
+  const availableIndices = playerBoard
+    .map((cell, idx) => (cell && cell.shot ? null : idx))
+    .filter((idx) => idx !== null);
+
+  if (availableIndices.length === 0) return;
+
+  const targetIndex =
+    availableIndices[Math.floor(Math.random() * availableIndices.length)];
+  const targetCell = playerBoard[targetIndex];
+
+  const isHit = targetCell && targetCell.shopId !== undefined;
+  let sunkShopId = null;
+
+  if (isHit) {
+    targetCell.shot = "HIT";
+    const shopId = targetCell.shopId;
+    const sameShopCells = playerBoard.filter((c) => c && c.shopId === shopId);
+    const allSunk = sameShopCells.every((c) => c.shot === "HIT");
+    if (allSunk) sunkShopId = shopId;
+  } else {
+    if (playerBoard[targetIndex]) playerBoard[targetIndex].shot = "MISS";
+    else playerBoard[targetIndex] = { shot: "MISS" };
+  }
+
+  const nextTurn = isHit ? room.botSocketId : playerSocketId;
+  room.turn = nextTurn;
+
+  io.to(roomId).emit("shot_result", {
+    shooter: room.botSocketId,
+    targetIndex,
+    isHit,
+    sunkShopId,
+    nextTurn,
+  });
+
+  // Kiểm tra Bot có chiến thắng không
+  const allPlayerCellsSunk = playerBoard.every(
+    (cell) => !cell || !cell.shopId || cell.shot === "HIT",
+  );
+
+  if (allPlayerCellsSunk) {
+    room.gameState = "FINISHED";
+    io.to(roomId).emit("game_over", { winner: room.botSocketId });
+  } else if (isHit && nextTurn === room.botSocketId) {
+    // Nếu Bot bắn trúng thì bắn tiếp sau 2.5 giây
+    setTimeout(() => triggerBotShot(roomId), 2500);
+  }
+};
 
 io.on("connection", (socket) => {
   console.log(`🔌 Người chơi kết nối: ${socket.id}`);
@@ -137,6 +295,8 @@ io.on("connection", (socket) => {
     const userId = data.userId || null;
 
     if (waitingPlayer && waitingPlayer.socketId !== socket.id) {
+      if (searchTimer) clearTimeout(searchTimer);
+
       const roomId = `room_${Date.now()}`;
       const player1 = waitingPlayer;
       const player2 = { socketId: socket.id, name: playerName, userId };
@@ -158,6 +318,7 @@ io.on("connection", (socket) => {
         },
         gameState: "SETUP",
         turn: null,
+        isBotRoom: false,
       };
 
       player1.socket.join(roomId);
@@ -178,12 +339,54 @@ io.on("connection", (socket) => {
     } else {
       waitingPlayer = { socket, socketId: socket.id, name: playerName, userId };
       socket.emit("waiting_for_opponent", "Đang chờ phượt thủ khác vào hẻm...");
+
+      // TỰ ĐỘNG GHÉP VỚI BOT NẾU QUÁ 8 GIÂY KHÔNG CÓ NGƯỜI THẬT
+      searchTimer = setTimeout(() => {
+        if (waitingPlayer && waitingPlayer.socketId === socket.id) {
+          const roomId = `room_bot_${Date.now()}`;
+          const botSocketId = `bot_${Date.now()}`;
+
+          activeRooms[roomId] = {
+            players: {
+              [socket.id]: {
+                socketId: socket.id,
+                name: playerName,
+                userId,
+                team: "red",
+                board: [],
+                ready: false,
+              },
+              [botSocketId]: {
+                socketId: botSocketId,
+                name: "Bot Sếp Gọi 🤖",
+                userId: null,
+                team: "blue",
+                board: generateBotBoard(),
+                ready: true,
+              },
+            },
+            gameState: "SETUP",
+            turn: null,
+            isBotRoom: true,
+            botSocketId,
+          };
+
+          socket.join(roomId);
+          socket.emit("match_found", {
+            roomId,
+            team: "red",
+            message: "Đã ghép trận cùng Cao Thủ AI!",
+          });
+          waitingPlayer = null;
+        }
+      }, 8000);
     }
   });
 
   // Hủy tìm trận
   socket.on("cancel_search", () => {
     if (waitingPlayer && waitingPlayer.socketId === socket.id) {
+      if (searchTimer) clearTimeout(searchTimer);
       waitingPlayer = null;
       console.log(`🚫 ${socket.id} đã hủy tìm trận.`);
     }
@@ -206,10 +409,15 @@ io.on("connection", (socket) => {
       room.turn = firstTurnId;
 
       io.to(roomId).emit("start_coin_flip", { firstTurnId });
+
+      // Nếu Bot đi trước, kích hoạt Bot tự bắn sau khi kết thúc animation tung xu
+      if (room.isBotRoom && firstTurnId === room.botSocketId) {
+        setTimeout(() => triggerBotShot(roomId), 4000);
+      }
     }
   });
 
-  // Thực hiện bắn
+  // Bắn đạn
   socket.on("fire_shot", async ({ roomId, targetIndex }) => {
     const room = activeRooms[roomId];
     if (!room || room.gameState !== "PLAYING" || room.turn !== socket.id)
@@ -232,9 +440,6 @@ io.on("connection", (socket) => {
       if (allSunk) sunkShopId = shopId;
     }
 
-    // --- SỬA CƠ CHẾ ĐỔI LƯỢT TẠI ĐÂY ---
-    // Nếu bắn TRÚNG (isHit = true) -> Giữ nguyên lượt của người bắn (socket.id)
-    // Nếu bắn TRƯỢT (isHit = false) -> Chuyển lượt cho đối thủ (opponentId)
     const nextTurn = isHit ? socket.id : opponentId;
     room.turn = nextTurn;
 
@@ -250,6 +455,7 @@ io.on("connection", (socket) => {
     const allOpponentCellsSunk = opponentBoard.every(
       (cell) => !cell || !cell.shopId || cell.shot === "HIT",
     );
+
     if (allOpponentCellsSunk) {
       room.gameState = "FINISHED";
       const winnerId = socket.id;
@@ -257,57 +463,30 @@ io.on("connection", (socket) => {
 
       io.to(roomId).emit("game_over", { winner: winnerId });
 
-      // Cập nhật thành tích vào MongoDB Atlas nếu người chơi đã đăng nhập
+      // Cập nhật điểm thành tích vào DB (chỉ áp dụng trận người với người)
       try {
-        const winnerUserId = room.players[winnerId].userId;
-        const loserUserId = room.players[loserId].userId;
+        if (!room.isBotRoom) {
+          const winnerUserId = room.players[winnerId]?.userId;
+          const loserUserId = room.players[loserId]?.userId;
 
-        if (winnerUserId) {
-          await User.findByIdAndUpdate(winnerUserId, {
-            $inc: { wins: 1, matches: 1 },
-          });
-        }
-        if (loserUserId) {
-          await User.findByIdAndUpdate(loserUserId, { $inc: { matches: 1 } });
+          if (winnerUserId) {
+            await User.findByIdAndUpdate(winnerUserId, {
+              $inc: { wins: 1, matches: 1 },
+            });
+          }
+          if (loserUserId) {
+            await User.findByIdAndUpdate(loserUserId, { $inc: { matches: 1 } });
+          }
         }
       } catch (err) {
         console.error("Lỗi cập nhật kết quả trận đấu:", err);
       }
+    } else if (room.isBotRoom && nextTurn === room.botSocketId) {
+      // Nếu lượt tiếp theo là của Bot, kích hoạt Bot bắn sau 2.5s
+      setTimeout(() => triggerBotShot(roomId), 2500);
     }
   });
-  // --- API QUÊN MẬT KHẨU / ĐẶT LẠI MẬT KHẨU ---
-  app.post("/api/forgot-password", async (req, res) => {
-    try {
-      const { username, displayName, newPassword } = req.body;
 
-      if (!username || !displayName || !newPassword) {
-        return res
-          .status(400)
-          .json({ message: "Vui lòng nhập đầy đủ thông tin!" });
-      }
-
-      // Tìm tài khoản khớp cả Tên tài khoản và Tên hiển thị
-      const user = await User.findOne({ username, displayName });
-      if (!user) {
-        return res.status(400).json({
-          message:
-            "Thông tin xác nhận không chính xác! Vui lòng kiểm tra lại Tên tài khoản và Biệt danh.",
-        });
-      }
-
-      // Mã hóa mật khẩu mới và lưu vào DB
-      const hashedPassword = await bcrypt.hash(newPassword, 10);
-      user.password = hashedPassword;
-      await user.save();
-
-      res.json({
-        message: "Đặt lại mật khẩu thành công! Bạn có thể đăng nhập ngay.",
-      });
-    } catch (err) {
-      console.error("Forgot Password Error:", err);
-      res.status(500).json({ message: "Lỗi máy chủ!" });
-    }
-  });
   // Chat
   socket.on("send_chat", ({ roomId, text }) => {
     const room = activeRooms[roomId];
@@ -322,6 +501,7 @@ io.on("connection", (socket) => {
   // Ngắt kết nối
   socket.on("disconnect", () => {
     if (waitingPlayer && waitingPlayer.socketId === socket.id) {
+      if (searchTimer) clearTimeout(searchTimer);
       waitingPlayer = null;
     }
 

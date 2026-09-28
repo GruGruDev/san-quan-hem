@@ -23,6 +23,7 @@ import DonateModal from "./components/Modals/DonateModal";
 import GuideModal from "./components/Modals/GuideModal";
 import LeaderboardModal from "./components/Modals/LeaderboardModal";
 import SettingsModal from "./components/Modals/SettingsModal";
+
 // Kết nối Socket.IO tới Server Production
 const socket = io("https://san-quan-hem-backend.onrender.com", {
   autoConnect: false,
@@ -76,7 +77,8 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
-  const [showDonate, setShowDonate] = useState(false);
+  const [showDonateModal, setShowDonateModal] = useState(false);
+
   // Khôi phục tài khoản đăng nhập
   useEffect(() => {
     const savedUser = localStorage.getItem("user");
@@ -287,7 +289,7 @@ export default function App() {
       socket.off("opponent_left");
       socket.disconnect();
     };
-  }, []); // [] rỗng giữ socket liên tục trong suốt quá trình chơi
+  }, []);
 
   // --- HANDLERS ---
   const handleFindMatch = (name) => {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getPlayerRank } from "../../constants/game";
 
 export default function LeaderboardModal({ isOpen, onClose }) {
   const [tab, setTab] = useState("ALL_TIME"); // ALL_TIME | WEEKLY
@@ -72,14 +73,14 @@ export default function LeaderboardModal({ isOpen, onClose }) {
         {/* Danh Sách BXH */}
         <div className="flex flex-col gap-2 min-h-[260px] max-h-[340px] overflow-y-auto pr-1">
           {loading ? (
-            <div className="flex flex-col items-center justify-center my-auto text-amber-300 gap-2">
+            <div className="flex flex-col items-center justify-center my-auto text-amber-300 gap-2 py-10">
               <span className="animate-spin text-2xl">⏳</span>
               <span className="text-xs font-bold">
                 Đang tải danh sách cao thủ...
               </span>
             </div>
           ) : leaderboardData.length === 0 ? (
-            <div className="flex flex-col items-center justify-center my-auto text-slate-400 text-xs font-bold gap-1">
+            <div className="flex flex-col items-center justify-center my-auto text-slate-400 text-xs font-bold gap-1 py-10">
               <span>🛵 Chưa có dữ liệu cao thủ!</span>
               <span className="text-[10px] opacity-70">
                 Hãy là người đầu tiên thắng trận!
@@ -96,6 +97,8 @@ export default function LeaderboardModal({ isOpen, onClose }) {
               const winRate =
                 matches > 0 ? ((wins / matches) * 100).toFixed(1) + "%" : "0%";
 
+              const rankInfo = getPlayerRank(wins);
+
               return (
                 <div
                   key={item._id || item.id || index}
@@ -109,9 +112,10 @@ export default function LeaderboardModal({ isOpen, onClose }) {
                           : "bg-slate-950/60 border-slate-800"
                   }`}
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2.5">
+                    {/* Badge Huy chương / Thứ hạng */}
                     <div
-                      className={`w-7 h-7 rounded-xl flex items-center justify-center font-black text-xs ${
+                      className={`w-7 h-7 rounded-xl flex items-center justify-center font-black text-xs shrink-0 ${
                         isTop1
                           ? "bg-yellow-400 text-slate-950 shadow-md shadow-yellow-500/50"
                           : isTop2
@@ -130,21 +134,22 @@ export default function LeaderboardModal({ isOpen, onClose }) {
                             : `#${index + 1}`}
                     </div>
 
-                    <div className="flex flex-col">
-                      <span className="text-xs font-black text-amber-100 tracking-wide">
+                    {/* Tên & Học vị Rank Hẻm */}
+                    <div className="flex flex-col text-left">
+                      <span className="text-xs font-black text-amber-100 tracking-wide flex items-center gap-1">
                         {item.displayName || item.name || "Phượt Thủ"}
+                        <span className="text-xs">{rankInfo.icon}</span>
                       </span>
-                      <span className="text-[10px] font-semibold text-amber-400/80">
-                        {wins >= 20
-                          ? "Vua Vỉa Hè"
-                          : wins >= 10
-                            ? "Thợ Săn Hẻm"
-                            : "Tân Binh Hẻm"}
+                      <span
+                        className={`text-[10px] font-bold ${rankInfo.color}`}
+                      >
+                        {rankInfo.title}
                       </span>
                     </div>
                   </div>
 
-                  <div className="text-right">
+                  {/* Thống kê trận thắng & tỷ lệ thắng */}
+                  <div className="text-right shrink-0">
                     <div className="text-xs font-black text-emerald-400">
                       {wins}{" "}
                       <span className="text-[10px] text-slate-400 font-normal">

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { SHOPS } from "../constants/game";
+import { useEffect, useRef, useState } from "react";
+import { SHOPS, filterBadWords } from "../constants/game";
 
 export default function BottomPanel({
   gameState,
@@ -16,11 +16,21 @@ export default function BottomPanel({
   messages = [],
 }) {
   const [chatInput, setChatInput] = useState("");
+  const chatEndRef = useRef(null);
+
+  // Tự động cuộn xuống tin nhắn mới nhất
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   const handleSend = (e) => {
     e.preventDefault();
     if (chatInput.trim()) {
-      onSendChat(chatInput.trim());
+      const cleanText =
+        typeof filterBadWords === "function"
+          ? filterBadWords(chatInput.trim())
+          : chatInput.trim();
+      onSendChat(cleanText);
       setChatInput("");
     }
   };
@@ -33,10 +43,10 @@ export default function BottomPanel({
   const isAllPlaced = SHOPS.every((s) => placedShopIds.has(s.id));
 
   return (
-    <div className="w-full max-w-md bg-slate-900 p-3 border-t border-slate-800 flex flex-col gap-2 rounded-b-2xl">
+    <div className="w-full max-w-md bg-slate-900 p-3 border-t border-slate-800 flex flex-col gap-2.5 rounded-b-2xl">
       {isSetup && (
         <div className="flex flex-col gap-2">
-          {/* Thanh Chọn Quán Tinh Gọn (Chỉ hiện Icon + Badge Số Ô) */}
+          {/* Thanh Chọn Quán Tinh Gọn */}
           <div className="flex gap-2 justify-center items-center bg-slate-950 p-2 rounded-xl border border-slate-800">
             {SHOPS.map((shop) => {
               const isPlaced = placedShopIds.has(shop.id);
@@ -114,35 +124,43 @@ export default function BottomPanel({
         </div>
       )}
 
-      {/* Frame Chat Log */}
-      <div className="bg-slate-950 rounded-xl p-2 h-16 flex flex-col justify-between border border-slate-800">
-        <div className="overflow-y-auto flex-1 text-[11px] flex flex-col gap-1 pr-1">
+      {/* Frame Chat Log (Mở rộng h-28 và tự cuộn trượt) */}
+      <div className="bg-slate-950 rounded-2xl p-2.5 h-28 flex flex-col justify-between border border-slate-800 shadow-inner">
+        <div className="overflow-y-auto flex-1 text-[12px] flex flex-col gap-1.5 pr-1 font-sans">
           {Array.isArray(messages) &&
             messages.map((msg, idx) => (
               <div
                 key={idx}
                 className={
                   msg.sender === "Hệ thống"
-                    ? "text-slate-400 italic"
-                    : "text-blue-400"
+                    ? "text-slate-400 italic font-medium leading-relaxed"
+                    : "text-slate-200 leading-relaxed"
                 }
               >
-                <b>{msg.sender}:</b> {msg.text}
+                <b className="text-amber-400 font-black">{msg.sender}:</b>{" "}
+                <span className="break-all font-medium">
+                  {typeof filterBadWords === "function"
+                    ? filterBadWords(msg.text)
+                    : msg.text}
+                </span>
               </div>
             ))}
+          {/* Thẻ neo tự động cuộn đến tin nhắn mới nhất */}
+          <div ref={chatEndRef} />
         </div>
 
-        <form onSubmit={handleSend} className="flex gap-1 mt-1">
+        <form onSubmit={handleSend} className="flex gap-1.5 mt-1.5">
           <input
             type="text"
-            placeholder="Gửi tin nhắn..."
+            placeholder="Gửi tin nhắn khịa..."
             value={chatInput}
             onChange={(e) => setChatInput(e.target.value)}
-            className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-yellow-500"
+            maxLength={50}
+            className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 transition"
           />
           <button
             type="submit"
-            className="bg-amber-500 hover:bg-yellow-400 text-slate-950 font-bold px-3 py-1 rounded-lg text-xs"
+            className="bg-amber-500 hover:bg-yellow-400 active:scale-95 text-slate-950 font-black px-3.5 py-1.5 rounded-xl text-xs uppercase tracking-wider transition shrink-0"
           >
             Gửi
           </button>

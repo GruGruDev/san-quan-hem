@@ -22,7 +22,6 @@ import AuthModal from "./components/Modals/AuthModal";
 import GuideModal from "./components/Modals/GuideModal";
 import LeaderboardModal from "./components/Modals/LeaderboardModal";
 import SettingsModal from "./components/Modals/SettingsModal";
-
 // Kết nối Socket.IO tới Server Production
 const socket = io("https://san-quan-hem-backend.onrender.com", {
   autoConnect: false,
@@ -76,7 +75,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
-
+  const [showDonate, setShowDonate] = useState(false);
   // Khôi phục tài khoản đăng nhập
   useEffect(() => {
     const savedUser = localStorage.getItem("user");
@@ -484,6 +483,10 @@ export default function App() {
                 playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
                 setShowAuthModal(true);
               }}
+              onOpenDonate={() => {
+                playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
+                setShowDonateModal(true);
+              }}
               currentUser={currentUser}
               onLogout={handleLogout}
             />
@@ -648,6 +651,10 @@ export default function App() {
           isOpen={showAuthModal}
           onClose={() => setShowAuthModal(false)}
           onAuthSuccess={(user) => setCurrentUser(user)}
+        />
+        <DonateModal
+          isOpen={showDonateModal}
+          onClose={() => setShowDonateModal(false)}
         />
       </div>
     </div>

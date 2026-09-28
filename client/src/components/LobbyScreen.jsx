@@ -7,6 +7,7 @@ export default function LobbyScreen({
   onOpenGuide,
   onOpenLeaderboard,
   onOpenAuth,
+  onOpenDonate,
   currentUser,
   onLogout,
 }) {
@@ -61,8 +62,15 @@ export default function LobbyScreen({
             </h1>
           </div>
 
-          {/* Cụm Nút BXH + Hướng Dẫn */}
+          {/* Cụm Nút BXH + Hướng Dẫn + Donate */}
           <div className="flex gap-1.5">
+            <button
+              onClick={onOpenDonate}
+              className="w-10 h-10 bg-rose-950/80 hover:bg-rose-900/80 border border-rose-500/50 rounded-2xl flex items-center justify-center text-rose-300 font-black text-base shadow-lg active:scale-95 transition backdrop-blur-md animate-pulse"
+              title="Ủng Hộ Tác Giả"
+            >
+              💖
+            </button>
             <button
               onClick={onOpenLeaderboard}
               className="w-10 h-10 bg-slate-900/80 hover:bg-amber-900/60 border border-amber-500/40 rounded-2xl flex items-center justify-center text-amber-300 font-black text-base shadow-lg active:scale-95 transition backdrop-blur-md"
@@ -164,6 +172,8 @@ export default function LobbyScreen({
 
               {/* Nút Bắt Đầu Tìm Trận */}
               <button
+                function
+                LobbyScreen
                 type="submit"
                 className="group relative w-full h-14 rounded-2xl bg-gradient-to-r from-amber-600 via-yellow-500 to-amber-600 p-0.5 shadow-[0_0_20px_rgba(245,158,11,0.4)] active:scale-95 transition-all duration-200"
               >

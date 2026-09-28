@@ -171,26 +171,25 @@ const activeRooms = {};
 
 // HÀM 1: Random chọn 3 quán cho mỗi trận (chỉ 2ô, 3ô, 4ô)
 const selectRandomShops = () => {
-  const pool = [
+  const pool2 = [
     {
       id: "cavien",
       name: "Xe Cá Viên Chiên",
       size: 2,
       icon: "/cavienchien.png",
     },
+  ];
+  const pool3 = [
     { id: "trasua", name: "Tiệm Trà Sữa", size: 3, icon: "/trasua.png" },
     { id: "bunrieu", name: "Gánh Bún Riêu", size: 3, icon: "/bunrieu.png" },
+  ];
+  const pool4 = [
     { id: "quanoc", name: "Quán Ốc Quen", size: 4, icon: "/donuong.png" },
-    {
-      id: "quannhau",
-      name: "Quán Nhậu Vỉa Hè",
-      size: 4,
-      icon: "/quannhau.png",
-    },
+    { id: "quannhau", name: "Khu Nhậu Vỉa Hè", size: 4, icon: "/quannhau.png" },
   ];
 
-  const picked = pool.sort(() => 0.5 - Math.random()).slice(0, 3);
-  return picked.sort((a, b) => a.size - b.size);
+  const pickRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  return [pickRandom(pool2), pickRandom(pool3), pickRandom(pool4)];
 };
 
 // HÀM 2: Bot đặt quán dựa trên 3 quán đã chọn
@@ -496,17 +495,37 @@ io.on("connection", (socket) => {
   // Chốt vị trí quán
   socket.on("ready_place_shops", ({ roomId, playerBoard }) => {
     const room = activeRooms[roomId];
-    if (!room) return;
+
+    // 💥 FIX LỖI ĐỨNG HÌNH: Báo lỗi nếu Server vừa bị khởi động lại mất data
+    if (!room) {
+      socket.emit(
+        "opponent_left",
+        "Lỗi đồng bộ: Phòng không tồn tại hoặc Server vừa bảo trì. Vui lòng tải lại trang!",
+      );
+      return;
+    }
+
+    // Chống Crash nếu Socket ID bị thay đổi do rớt mạng
+    if (!room.players[socket.id]) {
+      socket.emit(
+        "opponent_left",
+        "Lỗi kết nối: Mất phiên bản đồ. Vui lòng tìm trận lại!",
+      );
+      return;
+    }
 
     room.players[socket.id].board = playerBoard;
     room.players[socket.id].ready = true;
 
-    if (Object.values(room.players).every((p) => p.ready)) {
+    // Kiểm tra đủ 2 người và cả 2 đều đã ready
+    const players = Object.values(room.players);
+    if (players.length === 2 && players.every((p) => p.ready)) {
       room.gameState = "PLAYING";
       const playerIds = Object.keys(room.players);
       const firstTurnId =
         playerIds[Math.floor(Math.random() * playerIds.length)];
       room.turn = firstTurnId;
+
       io.to(roomId).emit("start_coin_flip", { firstTurnId });
 
       if (room.isBotRoom && firstTurnId === room.botSocketId) {

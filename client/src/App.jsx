@@ -628,6 +628,7 @@ export default function App() {
                   onFireShot={handleFireShot}
                   recentShot={showTaunt ? recentShot : null}
                   soundEnabled={soundEnabled}
+                  shops={activeShops} // TRUYỀN DANH SÁCH QUÁN XUỐNG BÀN CỜ ĐỂ FIX LỖI PREVIEW 4 Ô
                 />
               </div>
             </main>

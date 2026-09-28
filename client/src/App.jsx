@@ -5,6 +5,7 @@ import io from "socket.io-client";
 import { SHOPS, TAUNT_TEXTS } from "./constants/game";
 
 // Import Audio Utilities
+import { SERVER_URL } from "./utils/api";
 import { playBGM, playSFX, stopBGM } from "./utils/sound";
 
 // Import Components
@@ -25,9 +26,6 @@ import LeaderboardModal from "./components/Modals/LeaderboardModal";
 import PrivateRoomModal from "./components/Modals/PrivateRoomModal";
 import SettingsModal from "./components/Modals/SettingsModal";
 
-// Lấy URL từ biến môi trường Vite, nếu không có thì fallback về localhost
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3001";
-
 // Kết nối Socket.IO
 const socket = io(SERVER_URL, {
   autoConnect: false,
@@ -35,7 +33,16 @@ const socket = io(SERVER_URL, {
 
 export default function App() {
   // --- STATES TÀI KHOẢN ---
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(() => {
+    const savedUser = localStorage.getItem("user");
+    if (!savedUser) return null;
+    try {
+      return JSON.parse(savedUser);
+    } catch {
+      localStorage.removeItem("user");
+      return null;
+    }
+  });
   const [showAuthModal, setShowAuthModal] = useState(false);
 
   // --- STATES CÀI ĐẶT GAME ---
@@ -100,16 +107,11 @@ export default function App() {
 
   const getToken = () => localStorage.getItem("token");
 
-  useEffect(() => {
-    const savedUser = localStorage.getItem("user");
-    if (savedUser) {
-      try {
-        setCurrentUser(JSON.parse(savedUser));
-      } catch (e) {
-        localStorage.removeItem("user");
-      }
-    }
-  }, []);
+  const refreshSocketAuth = () => {
+    socket.auth = { token: getToken() };
+    socket.disconnect();
+    socket.connect();
+  };
 
   useEffect(() => {
     if (vibrate && recentShot && window.navigator.vibrate) {
@@ -156,6 +158,7 @@ export default function App() {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     setCurrentUser(null);
+    refreshSocketAuth();
   };
 
   const resetGameData = (newShops = activeShops) => {
@@ -174,6 +177,7 @@ export default function App() {
 
   // --- SOCKET LISTENERS ---
   useEffect(() => {
+    socket.auth = { token: getToken() };
     socket.connect();
 
     socket.on("match_found", (data) => {
@@ -219,6 +223,7 @@ export default function App() {
     });
 
     socket.on("shot_result", (data) => {
+      setOpponentAimingIndex(null);
       const { soundEnabled: sEnabled, sfxVolume: sVol } = soundRef.current;
       const isMeShooter = data.shooter === socket.id;
       const type = data.sunkShopId ? "SUNK" : data.isHit ? "HIT" : "MISS";
@@ -263,6 +268,14 @@ export default function App() {
       setMessages((prev) => [...prev, data]);
     });
 
+    socket.on("opponent_aiming", (targetIndex) => {
+      setOpponentAimingIndex(
+        Number.isInteger(targetIndex) && targetIndex >= 0 && targetIndex < 64
+          ? targetIndex
+          : null,
+      );
+    });
+
     socket.on("game_over", (data) => {
       const { soundEnabled: sEnabled, sfxVolume: sVol } = soundRef.current;
       setWinner(data.winner);
@@ -291,7 +304,7 @@ export default function App() {
       setCustomAlert((prev) => ({ ...prev, show: false })); // Tắt popup
     });
 
-    socket.on("opponent_left", (data) => {
+    socket.on("opponent_left", () => {
       // Đổi Alert thành Custom Toast bự
       showAlert(
         "Đối Thủ Rời Sảnh",
@@ -315,6 +328,7 @@ export default function App() {
       socket.off("start_coin_flip");
       socket.off("shot_result");
       socket.off("receive_chat");
+      socket.off("opponent_aiming");
       socket.off("game_over");
       socket.off("opponent_requested_rematch");
       socket.off("rematch_accepted");
@@ -328,7 +342,7 @@ export default function App() {
     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
     setPlayerName(name);
     setSearching(true);
-    socket.emit("tim_doi_thu", { name, token: getToken() });
+    socket.emit("tim_doi_thu", { name });
   };
 
   const handleCancelSearch = () => {
@@ -341,7 +355,6 @@ export default function App() {
     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
     socket.emit("create_private_room", {
       name: currentUser?.displayName || playerName || "Phượt Thủ Hẻm",
-      token: getToken(),
     });
   };
 
@@ -350,7 +363,6 @@ export default function App() {
     socket.emit("join_private_room", {
       roomCode: code,
       name: currentUser?.displayName || playerName || "Phượt Thủ Hẻm",
-      token: getToken(),
     });
   };
 
@@ -518,7 +530,7 @@ export default function App() {
 
   const handleLeaveRoom = () => {
     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
-    socket.emit("leave_room");
+    socket.emit("leave_room", { roomId: roomIdRef.current });
     setGameState("LOBBY");
     setRoomId(null);
     setSearching(false);
@@ -540,7 +552,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-2 select-none font-sans relative">
-      <div className="w-full max-w-md bg-slate-900 rounded-3xl shadow-2xl overflow-hidden border-4 border-slate-800 flex flex-col h-[850px] max-h-screen relative">
+      <div className="w-full max-w-md bg-slate-900 rounded-3xl shadow-2xl overflow-hidden border-4 border-slate-800 flex flex-col h-212.5 max-h-screen relative">
         {gameState === "LOBBY" ? (
           <>
             <LobbyScreen
@@ -589,7 +601,7 @@ export default function App() {
             />
             <main className="flex-1 bg-slate-950 p-3 flex flex-col justify-between items-center relative overflow-visible">
               {gameState === "PLAYING" && (
-                <div className="w-full max-w-[360px] bg-slate-900/90 border border-slate-800 rounded-2xl p-2.5 flex justify-between items-center shadow-xl my-auto animate-fade-in">
+                <div className="w-full max-w-90 bg-slate-900/90 border border-slate-800 rounded-2xl p-2.5 flex justify-between items-center shadow-xl my-auto animate-fade-in">
                   <div className="flex flex-col gap-1">
                     <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider">
                       🏠 QUÁN BẠN
@@ -654,6 +666,8 @@ export default function App() {
                   setPreviewIndex={setPreviewIndex}
                   isMyTurn={isMyTurn}
                   onFireShot={handleFireShot}
+                  opponentAimingIndex={opponentAimingIndex}
+                  onAimShot={handleAimShot}
                   recentShot={showTaunt ? recentShot : null}
                   soundEnabled={soundEnabled}
                   shops={activeShops}
@@ -721,7 +735,10 @@ export default function App() {
         <AuthModal
           isOpen={showAuthModal}
           onClose={() => setShowAuthModal(false)}
-          onAuthSuccess={(user) => setCurrentUser(user)}
+          onAuthSuccess={(user) => {
+            setCurrentUser(user);
+            refreshSocketAuth();
+          }}
         />
         <DonateModal
           isOpen={showDonateModal}
@@ -741,7 +758,7 @@ export default function App() {
 
         {/* HỆ THỐNG CUSTOM TOAST (THÔNG BÁO) GHI ĐÈ LÊN MỌI THỨ */}
         {customAlert.show && (
-          <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/70 p-5 backdrop-blur-sm">
+          <div className="absolute inset-0 z-100 flex items-center justify-center bg-black/70 p-5 backdrop-blur-sm">
             <div className="bg-slate-900 border-2 border-slate-700 rounded-3xl p-6 shadow-2xl w-full animate-fade-in flex flex-col items-center text-center">
               <div className="text-5xl mb-3 drop-shadow-md">
                 {customAlert.type === "error"

@@ -1,24 +1,23 @@
 import { useState } from "react";
+import { apiUrl } from "../../utils/api";
 
 export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
-  // mode: 'LOGIN' | 'REGISTER' | 'FORGOT'
+  // mode: 'LOGIN' | 'REGISTER'
   const [mode, setMode] = useState("LOGIN");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState("");
-  const [successMsg, setSuccessMsg] = useState("");
+  const [notice, setNotice] = useState("");
 
   if (!isOpen) return null;
 
   const handleResetForm = () => {
     setError("");
-    setSuccessMsg("");
+    setNotice("");
     setUsername("");
     setPassword("");
     setDisplayName("");
-    setNewPassword("");
   };
 
   const switchMode = (newMode) => {
@@ -29,46 +28,30 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
-    setSuccessMsg("");
+    setNotice("");
 
-    let endpoint = "/api/login";
-    let payload = {};
-
-    if (mode === "LOGIN") {
-      endpoint = "/api/login";
-      payload = { username, password };
-    } else if (mode === "REGISTER") {
-      endpoint = "/api/register";
-      payload = { username, password, displayName };
-    } else if (mode === "FORGOT") {
-      endpoint = "/api/forgot-password";
-      payload = { username, displayName, newPassword };
-    }
+    const endpoint = mode === "LOGIN" ? "/api/login" : "/api/register";
+    const payload =
+      mode === "LOGIN"
+        ? { username, password }
+        : { username, password, displayName };
 
     try {
-      const res = await fetch(
-        `https://san-quan-hem-backend.onrender.com${endpoint}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        },
-      );
+      const res = await fetch(apiUrl(endpoint), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Đã có lỗi xảy ra!");
 
-      if (mode === "FORGOT") {
-        setSuccessMsg(data.message);
-        setTimeout(() => switchMode("LOGIN"), 2000);
-      } else {
-        // Lưu Token & Thông tin User vào LocalStorage khi Đăng nhập / Đăng ký
-        localStorage.setItem("token", data.token);
-        localStorage.setItem("user", JSON.stringify(data.user));
+      // Lưu Token & Thông tin User vào LocalStorage khi Đăng nhập / Đăng ký
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
 
-        onAuthSuccess(data.user);
-        onClose();
-      }
+      onAuthSuccess(data.user);
+      onClose();
     } catch (err) {
       setError(err.message);
     }
@@ -100,9 +83,9 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
             ⚠️ {error}
           </div>
         )}
-        {successMsg && (
-          <div className="bg-emerald-950/80 border border-emerald-500/60 text-emerald-200 text-xs p-2.5 rounded-xl text-center font-bold">
-            ✅ {successMsg}
+        {notice && (
+          <div className="bg-sky-950/80 border border-sky-500/50 text-sky-100 text-xs p-2.5 rounded-xl text-center font-bold">
+            {notice}
           </div>
         )}
 
@@ -118,8 +101,8 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
             required
           />
 
-          {/* Biệt danh (Cần khi Đăng ký & Xác minh Quên mật khẩu) */}
-          {(mode === "REGISTER" || mode === "FORGOT") && (
+          {/* Biệt danh */}
+          {mode === "REGISTER" && (
             <input
               type="text"
               placeholder="Tên hiển thị (Biệt danh lúc đăng ký)..."
@@ -130,33 +113,26 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
             />
           )}
 
-          {/* Mật khẩu cũ / Mật khẩu mới */}
-          {mode !== "FORGOT" ? (
-            <input
-              type="password"
-              placeholder="Mật khẩu..."
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-amber-100 text-xs font-bold focus:outline-none focus:border-amber-400 transition"
-              required
-            />
-          ) : (
-            <input
-              type="password"
-              placeholder="Nhập mật khẩu MỚI..."
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              className="px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-amber-100 text-xs font-bold focus:outline-none focus:border-amber-400 transition"
-              required
-            />
-          )}
+          <input
+            type="password"
+            placeholder="Mật khẩu..."
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-amber-100 text-xs font-bold focus:outline-none focus:border-amber-400 transition"
+            required
+          />
 
           {/* Nút Quên mật khẩu nhỏ khi ở giao diện Đăng nhập */}
           {mode === "LOGIN" && (
             <div className="text-right -mt-1">
               <button
                 type="button"
-                onClick={() => switchMode("FORGOT")}
+                onClick={() => {
+                  setError("");
+                  setNotice(
+                    "Khôi phục mật khẩu chưa khả dụng do chưa có xác minh danh tính. Vui lòng liên hệ quản trị viên.",
+                  );
+                }}
                 className="text-[11px] text-amber-400/80 hover:text-amber-300 font-semibold hover:underline"
               >
                 Quên mật khẩu?
@@ -167,11 +143,10 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
           {/* Nút Submit */}
           <button
             type="submit"
-            className="w-full bg-gradient-to-r from-amber-500 to-yellow-500 hover:brightness-110 text-slate-950 font-black py-3 rounded-xl shadow-lg active:scale-95 transition text-xs uppercase tracking-wider mt-1"
+            className="w-full bg-linear-to-r from-amber-500 to-yellow-500 hover:brightness-110 text-slate-950 font-black py-3 rounded-xl shadow-lg active:scale-95 transition text-xs uppercase tracking-wider mt-1"
           >
             {mode === "LOGIN" && "ĐĂNG NHẬP NGAY"}
             {mode === "REGISTER" && "TẠO TÀI KHOẢN MỚI"}
-            {mode === "FORGOT" && "ĐẶT LẠI MẬT KHẨU"}
           </button>
         </form>
 
@@ -189,7 +164,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
             </span>
           )}
 
-          {(mode === "REGISTER" || mode === "FORGOT") && (
+          {mode === "REGISTER" && (
             <span>
               Đã nhớ mật khẩu?{" "}
               <button

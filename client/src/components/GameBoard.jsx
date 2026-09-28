@@ -101,7 +101,7 @@ export default function GameBoard({
   return (
     <div
       // RUNG TOÀN BÀN CỜ
-      className={`relative w-full aspect-square max-w-[360px] bg-slate-900 rounded-2xl p-1 shadow-2xl border-2 border-slate-700 select-none touch-none overflow-visible transition-transform ${
+      className={`relative w-full aspect-square max-w-90 bg-slate-900 rounded-2xl p-1 shadow-2xl border-2 border-slate-700 select-none touch-none overflow-visible transition-transform ${
         isSunkExplosion ? "animate-shake" : ""
       }`}
       onPointerUp={handlePointerUp}
@@ -113,7 +113,7 @@ export default function GameBoard({
         className="absolute inset-0 w-full h-full object-fill rounded-xl pointer-events-none"
       />
 
-      <div className="absolute inset-0 grid grid-cols-8 grid-rows-8 gap-[1px] w-full h-full p-[8.5%]">
+      <div className="absolute inset-0 grid grid-cols-8 grid-rows-8 gap-px w-full h-full p-[8.5%]">
         {/* LƯỚI NHÀ BẠN */}
         {(isSetup || (isPlaying && !isMyTurn)) &&
           myBoard.map((cell, index) => {
@@ -129,7 +129,7 @@ export default function GameBoard({
                   w-full h-full flex items-center justify-center relative border border-white/10 rounded-sm transition-all overflow-visible cursor-pointer
                   ${isPreview && isPreviewValid ? "bg-emerald-500/50 border-2 border-emerald-300" : ""}
                   ${isPreview && !isPreviewValid ? "bg-rose-500/50 border-2 border-rose-300" : ""}
-                  ${cell && cell.shopId ? `outline outline-2 -outline-offset-2 ${SHOP_OUTLINE[cell.shopId] || "outline-yellow-400"}` : ""}
+                  ${cell && cell.shopId ? `outline-solid outline-2 -outline-offset-2 ${SHOP_OUTLINE[cell.shopId] || "outline-yellow-400"}` : ""}
                 `}
               >
                 {cell && cell.icon && (
@@ -152,7 +152,7 @@ export default function GameBoard({
                 {isOpponentAimingHere && (
                   <img
                     src="/vitri.png"
-                    className="absolute inset-0 w-[120%] h-[120%] -left-[10%] -top-[10%] max-w-none object-contain z-30 animate-ping opacity-90 pointer-events-none drop-shadow-[0_0_8px_rgba(255,0,0,0.8)]"
+                    className="absolute inset-0 w-[120%] h-[120%] left-[-10%] top-[-10%] max-w-none object-contain z-30 animate-ping opacity-90 pointer-events-none drop-shadow-[0_0_8px_rgba(255,0,0,0.8)]"
                     alt="Opponent Aiming"
                   />
                 )}

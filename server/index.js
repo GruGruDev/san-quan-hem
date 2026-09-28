@@ -7,26 +7,78 @@ const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
+const { rateLimit } = require("express-rate-limit");
 const User = require("./models/User");
 
 // --- BÍ MẬT LẤY TỪ BIẾN MÔI TRƯỜNG (.env / Render Dashboard) ---
 const { MONGO_URI, JWT_SECRET } = process.env;
-if (!MONGO_URI || !JWT_SECRET) {
+if (!MONGO_URI || !JWT_SECRET || JWT_SECRET.length < 32) {
   console.error(
-    "❌ Thiếu MONGO_URI hoặc JWT_SECRET trong .env / biến môi trường!",
+    "❌ Cần MONGO_URI và JWT_SECRET dài ít nhất 32 ký tự trong .env / biến môi trường!",
   );
   process.exit(1);
 }
 
-const ALLOWED_ORIGINS = [
-  "https://san-quan-hem.vercel.app",
-  "http://localhost:5173",
-  "http://localhost:3000",
-];
+const getUtcWeekStart = (date = new Date()) => {
+  const weekStart = new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+  );
+  weekStart.setUTCDate(
+    weekStart.getUTCDate() - ((weekStart.getUTCDay() + 6) % 7),
+  );
+  return weekStart;
+};
+
+const updatePlayerStats = (userId, isWinner) => {
+  const weekStart = getUtcWeekStart();
+  const weeklyMatches = {
+    $cond: [
+      { $eq: ["$weeklyWeekStart", weekStart] },
+      { $add: [{ $ifNull: ["$weeklyMatches", 0] }, 1] },
+      1,
+    ],
+  };
+  const weeklyWins = {
+    $cond: [
+      { $eq: ["$weeklyWeekStart", weekStart] },
+      { $add: [{ $ifNull: ["$weeklyWins", 0] }, isWinner ? 1 : 0] },
+      isWinner ? 1 : 0,
+    ],
+  };
+
+  return User.findByIdAndUpdate(userId, [
+    {
+      $set: {
+        matches: { $add: [{ $ifNull: ["$matches", 0] }, 1] },
+        wins: { $add: [{ $ifNull: ["$wins", 0] }, isWinner ? 1 : 0] },
+        weeklyMatches,
+        weeklyWins,
+        weeklyWeekStart: weekStart,
+      },
+    },
+  ]);
+};
+
+const ALLOWED_ORIGINS = (
+  process.env.CLIENT_ORIGINS ||
+  "https://san-quan-hem.vercel.app,http://localhost:5173,http://localhost:3000"
+)
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 const app = express();
+app.set("trust proxy", 1);
 app.use(express.json());
 app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { message: "Quá nhiều lần thử. Vui lòng đợi 15 phút rồi thử lại." },
+});
 
 // --- KẾT NỐI MONGODB ATLAS CLOUD ---
 mongoose
@@ -35,31 +87,47 @@ mongoose
   .catch((err) => console.error("❌ Lỗi kết nối MongoDB Atlas:", err.message));
 
 // --- API AUTHENTICATION ---
-app.post("/api/register", async (req, res) => {
+app.post("/api/register", authLimiter, async (req, res) => {
   try {
-    const { username, password, displayName } = req.body;
-    if (!username || !password) {
+    const { username, password, displayName } = req.body || {};
+    if (
+      typeof username !== "string" ||
+      username.trim().length < 3 ||
+      username.trim().length > 32 ||
+      typeof password !== "string" ||
+      password.length < 8 ||
+      Buffer.byteLength(password, "utf8") > 72 ||
+      (displayName !== undefined &&
+        (typeof displayName !== "string" || displayName.trim().length > 32))
+    ) {
       return res
         .status(400)
-        .json({ message: "Vui lòng nhập đầy đủ thông tin!" });
+        .json({ message: "Thông tin đăng ký không hợp lệ." });
     }
 
-    const existingUser = await User.findOne({ username });
+    const normalizedUsername = username.trim();
+    const normalizedDisplayName = displayName?.trim() || normalizedUsername;
+
+    const existingUser = await User.findOne({ username: normalizedUsername });
     if (existingUser) {
       return res.status(400).json({ message: "Tên tài khoản đã tồn tại!" });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const newUser = new User({
-      username,
+      username: normalizedUsername,
       password: hashedPassword,
-      displayName: displayName || username,
+      displayName: normalizedDisplayName,
     });
     await newUser.save();
 
-    const token = jwt.sign({ userId: newUser._id, username }, JWT_SECRET, {
-      expiresIn: "7d",
-    });
+    const token = jwt.sign(
+      { userId: newUser._id.toString(), username: normalizedUsername },
+      JWT_SECRET,
+      {
+        expiresIn: "7d",
+      },
+    );
     res.json({
       token,
       user: {
@@ -75,10 +143,23 @@ app.post("/api/register", async (req, res) => {
   }
 });
 
-app.post("/api/login", async (req, res) => {
+app.post("/api/login", authLimiter, async (req, res) => {
   try {
-    const { username, password } = req.body;
-    const user = await User.findOne({ username });
+    const { username, password } = req.body || {};
+    if (
+      typeof username !== "string" ||
+      !username.trim() ||
+      username.length > 32 ||
+      typeof password !== "string" ||
+      Buffer.byteLength(password, "utf8") > 72
+    ) {
+      return res
+        .status(400)
+        .json({ message: "Tài khoản hoặc mật khẩu không đúng!" });
+    }
+
+    const normalizedUsername = username.trim();
+    const user = await User.findOne({ username: normalizedUsername });
     if (!user) {
       return res
         .status(400)
@@ -92,9 +173,11 @@ app.post("/api/login", async (req, res) => {
         .json({ message: "Tài khoản hoặc mật khẩu không đúng!" });
     }
 
-    const token = jwt.sign({ userId: user._id, username }, JWT_SECRET, {
-      expiresIn: "7d",
-    });
+    const token = jwt.sign(
+      { userId: user._id.toString(), username: normalizedUsername },
+      JWT_SECRET,
+      { expiresIn: "7d" },
+    );
     res.json({
       token,
       user: {
@@ -111,42 +194,36 @@ app.post("/api/login", async (req, res) => {
 });
 
 app.post("/api/forgot-password", async (req, res) => {
-  try {
-    const { username, displayName, newPassword } = req.body;
-    if (!username || !displayName || !newPassword) {
-      return res
-        .status(400)
-        .json({ message: "Vui lòng nhập đầy đủ thông tin!" });
-    }
-
-    const user = await User.findOne({ username, displayName });
-    if (!user) {
-      return res.status(400).json({
-        message:
-          "Thông tin xác nhận không chính xác! Vui lòng kiểm tra lại Tên tài khoản và Biệt danh.",
-      });
-    }
-
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    user.password = hashedPassword;
-    await user.save();
-    res.json({
-      message: "Đặt lại mật khẩu thành công! Bạn có thể đăng nhập ngay.",
-    });
-  } catch (err) {
-    console.error("Forgot Password Error:", err);
-    res.status(500).json({ message: "Lỗi máy chủ!" });
-  }
+  res.status(410).json({
+    message:
+      "Khôi phục mật khẩu hiện chưa khả dụng vì chưa có bước xác minh danh tính. Vui lòng liên hệ quản trị viên.",
+  });
 });
 
 app.get("/api/leaderboard", async (req, res) => {
   try {
     if (mongoose.connection.readyState !== 1) return res.json([]);
-    const topUsers = await User.find()
-      .select("displayName wins matches")
-      .sort({ wins: -1, matches: 1 })
+    const weekly = req.query.period === "week";
+    const topUsers = await User.find(
+      weekly ? { weeklyWeekStart: getUtcWeekStart() } : {},
+    )
+      .select("displayName wins matches weeklyWins weeklyMatches")
+      .sort(
+        weekly
+          ? { weeklyWins: -1, weeklyMatches: 1 }
+          : { wins: -1, matches: 1 },
+      )
       .limit(10);
-    res.json(topUsers);
+    res.json(
+      topUsers.map((user) => {
+        const result = user.toObject();
+        if (weekly) {
+          result.wins = result.weeklyWins || 0;
+          result.matches = result.weeklyMatches || 0;
+        }
+        return result;
+      }),
+    );
   } catch (err) {
     console.error("Leaderboard Error:", err.message);
     res.json([]);
@@ -158,6 +235,33 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: ALLOWED_ORIGINS, methods: ["GET", "POST"] },
 });
+
+io.use((socket, next) => {
+  const token = socket.handshake.auth?.token;
+  if (!token) {
+    socket.data.userId = null;
+    return next();
+  }
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    if (typeof payload.userId !== "string") {
+      return next(new Error("Token tài khoản không hợp lệ."));
+    }
+    socket.data.userId = payload.userId;
+    next();
+  } catch {
+    next(new Error("Phiên đăng nhập không hợp lệ hoặc đã hết hạn."));
+  }
+});
+
+const getPlayerName = (value) =>
+  typeof value === "string" && value.trim()
+    ? value.trim().slice(0, 32)
+    : "Phượt Thủ";
+
+const isSocketPayload = (value) =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
 
 let waitingPlayer = null;
 let searchTimer = null;
@@ -344,8 +448,9 @@ io.on("connection", (socket) => {
 
   // Tìm đối thủ ghép ngẫu nhiên
   socket.on("tim_doi_thu", (data = {}) => {
-    const playerName = data.name || "Phượt Thủ";
-    const userId = data.userId || null;
+    if (!isSocketPayload(data)) return;
+    const playerName = getPlayerName(data.name);
+    const userId = socket.data.userId;
 
     // Đang chờ rồi thì bỏ qua, tránh tạo thêm timer thừa
     if (waitingPlayer && waitingPlayer.socketId === socket.id) return;
@@ -477,8 +582,9 @@ io.on("connection", (socket) => {
 
   // --- CHẾ ĐỘ PHÒNG KÍN (MÃ HẺM) ---
   socket.on("create_private_room", (data = {}) => {
-    const playerName = data.name || "Phượt Thủ";
-    const userId = data.userId || null;
+    if (!isSocketPayload(data)) return;
+    const playerName = getPlayerName(data.name);
+    const userId = socket.data.userId;
 
     const roomCode = Math.random().toString(36).substring(2, 7).toUpperCase();
     const roomId = `private_${roomCode}`;
@@ -513,10 +619,34 @@ io.on("connection", (socket) => {
   });
 
   socket.on("join_private_room", (data = {}) => {
-    const playerName = data.name || "Phượt Thủ";
-    const userId = data.userId || null;
+    if (!isSocketPayload(data)) return;
 
-    const roomCode = (data.roomCode || "").trim().toUpperCase();
+    const now = Date.now();
+    const recentJoinAttempts = (
+      socket.data.privateRoomJoinAttempts || []
+    ).filter((timestamp) => now - timestamp < 60_000);
+    if (recentJoinAttempts.length >= 10) {
+      socket.emit(
+        "join_private_error",
+        "Bạn thử quá nhiều mã. Vui lòng chờ một phút.",
+      );
+      return;
+    }
+    recentJoinAttempts.push(now);
+    socket.data.privateRoomJoinAttempts = recentJoinAttempts;
+
+    const playerName = getPlayerName(data.name);
+    const userId = socket.data.userId;
+
+    if (typeof data.roomCode !== "string") {
+      socket.emit("join_private_error", "Mã Hẻm không hợp lệ!");
+      return;
+    }
+    const roomCode = data.roomCode.trim().toUpperCase();
+    if (!/^[A-Z0-9]{5}$/.test(roomCode)) {
+      socket.emit("join_private_error", "Mã Hẻm không hợp lệ!");
+      return;
+    }
     const roomId = `private_${roomCode}`;
 
     const room = activeRooms[roomId];
@@ -571,7 +701,10 @@ io.on("connection", (socket) => {
   });
 
   // Chốt vị trí quán (Sẵn sàng)
-  socket.on("ready_place_shops", ({ roomId, playerBoard } = {}) => {
+  socket.on("ready_place_shops", (data = {}) => {
+    if (!isSocketPayload(data)) return;
+    const { roomId: requestedRoomId, playerBoard } = data;
+    let roomId = requestedRoomId;
     let room = activeRooms[roomId];
 
     // Tự động tìm lại room nếu roomId bị sai lệch / nhầm lẫn
@@ -626,7 +759,9 @@ io.on("connection", (socket) => {
   });
 
   // Bắn đạn
-  socket.on("fire_shot", async ({ roomId, targetIndex } = {}) => {
+  socket.on("fire_shot", async (data = {}) => {
+    if (!isSocketPayload(data)) return;
+    const { roomId, targetIndex } = data;
     const room = activeRooms[roomId];
     if (!room || room.gameState !== "PLAYING" || room.turn !== socket.id)
       return;
@@ -678,12 +813,8 @@ io.on("connection", (socket) => {
           const winnerUserId = room.players[socket.id]?.userId;
           const loserUserId = room.players[opponentId]?.userId;
 
-          if (winnerUserId)
-            await User.findByIdAndUpdate(winnerUserId, {
-              $inc: { wins: 1, matches: 1 },
-            });
-          if (loserUserId)
-            await User.findByIdAndUpdate(loserUserId, { $inc: { matches: 1 } });
+          if (winnerUserId) await updatePlayerStats(winnerUserId, true);
+          if (loserUserId) await updatePlayerStats(loserUserId, false);
         }
       } catch (err) {
         console.error("Lỗi cập nhật kết quả:", err);
@@ -694,9 +825,13 @@ io.on("connection", (socket) => {
   });
 
   // Truyền tín hiệu ghim vị trí ngắm bắn cho đối thủ
-  socket.on("aim_shot", ({ roomId, targetIndex } = {}) => {
+  socket.on("aim_shot", (data = {}) => {
+    if (!isSocketPayload(data)) return;
+    const { roomId, targetIndex } = data;
     const room = activeRooms[roomId];
     if (!room || room.gameState !== "PLAYING" || room.turn !== socket.id)
+      return;
+    if (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex > 63)
       return;
 
     // Gửi vị trí ngắm cho người còn lại trong phòng
@@ -704,7 +839,9 @@ io.on("connection", (socket) => {
   });
 
   // Tái đấu
-  socket.on("request_rematch", ({ roomId } = {}) => {
+  socket.on("request_rematch", (data = {}) => {
+    if (!isSocketPayload(data)) return;
+    const { roomId } = data;
     const room = activeRooms[roomId];
     if (!room || !room.players[socket.id] || room.gameState !== "FINISHED")
       return;
@@ -733,7 +870,9 @@ io.on("connection", (socket) => {
   });
 
   // Rời phòng chủ động (về sảnh) — báo đối thủ và giải tán phòng
-  socket.on("leave_room", ({ roomId } = {}) => {
+  socket.on("leave_room", (data = {}) => {
+    if (!isSocketPayload(data)) return;
+    const { roomId } = data;
     const room = activeRooms[roomId];
     if (!room || !room.players[socket.id]) return;
 
@@ -743,7 +882,9 @@ io.on("connection", (socket) => {
   });
 
   // Chat
-  socket.on("send_chat", ({ roomId, text } = {}) => {
+  socket.on("send_chat", (data = {}) => {
+    if (!isSocketPayload(data)) return;
+    const { roomId, text } = data;
     const room = activeRooms[roomId];
     if (room && room.players[socket.id] && typeof text === "string") {
       io.to(roomId).emit("receive_chat", {
@@ -766,9 +907,7 @@ io.on("connection", (socket) => {
           const leaverUserId = room.players[socket.id].userId;
           if (leaverUserId && !room.isBotRoom) {
             try {
-              await User.findByIdAndUpdate(leaverUserId, {
-                $inc: { matches: 1 },
-              });
+              await updatePlayerStats(leaverUserId, false);
             } catch (err) {
               console.error("Lỗi cập nhật hình phạt sủi trận:", err);
             }

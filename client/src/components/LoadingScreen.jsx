@@ -34,8 +34,8 @@ export default function LoadingScreen({ onFinish }) {
         </p>
       </div>
 
-      <div className="w-2/3 max-w-[220px] h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-700 mt-6">
-        <div className="h-full bg-gradient-to-r from-amber-500 to-yellow-400 rounded-full animate-pulse w-full" />
+      <div className="w-2/3 max-w-55 h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-700 mt-6">
+        <div className="h-full bg-linear-to-r from-amber-500 to-yellow-400 rounded-full animate-pulse w-full" />
       </div>
 
       <span className="absolute bottom-4 right-4 text-[10px] text-slate-600 font-bold tracking-wider">

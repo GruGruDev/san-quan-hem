@@ -6,6 +6,9 @@ const userSchema = new mongoose.Schema({
   displayName: { type: String, required: true },
   wins: { type: Number, default: 0 },
   matches: { type: Number, default: 0 },
+  weeklyWins: { type: Number, default: 0 },
+  weeklyMatches: { type: Number, default: 0 },
+  weeklyWeekStart: { type: Date, default: Date.now },
   createdAt: { type: Date, default: Date.now },
 });
 

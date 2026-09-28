@@ -1,27 +1,43 @@
 import { useEffect, useState } from "react";
 import { getPlayerRank } from "../../constants/game";
+import { apiUrl } from "../../utils/api";
 
 export default function LeaderboardModal({ isOpen, onClose }) {
   const [tab, setTab] = useState("ALL_TIME"); // ALL_TIME | WEEKLY
-  const [leaderboardData, setLeaderboardData] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [leaderboardState, setLeaderboardState] = useState({
+    tab: null,
+    data: [],
+    error: false,
+  });
+  const loading = leaderboardState.tab !== tab;
+  const leaderboardData = loading ? [] : leaderboardState.data;
 
-  // Fetch dữ liệu BXH Realtime từ Server khi mở Modal
+  // Fetch dữ liệu BXH khi mở Modal hoặc đổi tab
   useEffect(() => {
-    if (isOpen) {
-      setLoading(true);
-      fetch("https://san-quan-hem-backend.onrender.com/api/leaderboard")
-        .then((res) => res.json())
-        .then((data) => {
-          setLeaderboardData(Array.isArray(data) ? data : []);
-          setLoading(false);
-        })
-        .catch((err) => {
-          console.error("Lỗi tải BXH:", err);
-          setLoading(false);
+    if (!isOpen) return;
+
+    const controller = new AbortController();
+    const period = tab === "WEEKLY" ? "?period=week" : "";
+    fetch(apiUrl(`/api/leaderboard${period}`), { signal: controller.signal })
+      .then((res) => {
+        if (!res.ok) throw new Error("Leaderboard request failed");
+        return res.json();
+      })
+      .then((data) => {
+        setLeaderboardState({
+          tab,
+          data: Array.isArray(data) ? data : [],
+          error: false,
         });
-    }
-  }, [isOpen]);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setLeaderboardState({ tab, data: [], error: true });
+        }
+      });
+
+    return () => controller.abort();
+  }, [isOpen, tab]);
 
   if (!isOpen) return null;
 
@@ -38,7 +54,7 @@ export default function LeaderboardModal({ isOpen, onClose }) {
 
         {/* Tiêu đề Modal */}
         <div className="text-center mt-1">
-          <div className="inline-block bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 text-slate-950 text-[10px] font-black px-3 py-0.5 rounded-full uppercase tracking-widest shadow mb-1">
+          <div className="inline-block bg-linear-to-r from-amber-500 via-yellow-400 to-amber-500 text-slate-950 text-[10px] font-black px-3 py-0.5 rounded-full uppercase tracking-widest shadow mb-1">
             Bảng Vàng Hẻm Realtime
           </div>
           <h2 className="text-xl font-black text-amber-300 tracking-wider uppercase drop-shadow">
@@ -71,7 +87,7 @@ export default function LeaderboardModal({ isOpen, onClose }) {
         </div>
 
         {/* Danh Sách BXH */}
-        <div className="flex flex-col gap-2 min-h-[260px] max-h-[340px] overflow-y-auto pr-1">
+        <div className="flex flex-col gap-2 min-h-65 max-h-85 overflow-y-auto pr-1">
           {loading ? (
             <div className="flex flex-col items-center justify-center my-auto text-amber-300 gap-2 py-10">
               <span className="animate-spin text-2xl">⏳</span>
@@ -81,10 +97,16 @@ export default function LeaderboardModal({ isOpen, onClose }) {
             </div>
           ) : leaderboardData.length === 0 ? (
             <div className="flex flex-col items-center justify-center my-auto text-slate-400 text-xs font-bold gap-1 py-10">
-              <span>🛵 Chưa có dữ liệu cao thủ!</span>
-              <span className="text-[10px] opacity-70">
-                Hãy là người đầu tiên thắng trận!
-              </span>
+              {leaderboardState.error ? (
+                <span>Không tải được bảng xếp hạng. Vui lòng thử lại.</span>
+              ) : (
+                <>
+                  <span>🛵 Chưa có dữ liệu cao thủ!</span>
+                  <span className="text-[10px] opacity-70">
+                    Hãy là người đầu tiên thắng trận!
+                  </span>
+                </>
+              )}
             </div>
           ) : (
             leaderboardData.map((item, index) => {
@@ -104,7 +126,7 @@ export default function LeaderboardModal({ isOpen, onClose }) {
                   key={item._id || item.id || index}
                   className={`flex items-center justify-between p-2.5 rounded-2xl border transition ${
                     isTop1
-                      ? "bg-gradient-to-r from-amber-500/20 via-yellow-500/10 to-transparent border-yellow-400/60 shadow-lg shadow-yellow-500/10"
+                      ? "bg-linear-to-r from-amber-500/20 via-yellow-500/10 to-transparent border-yellow-400/60 shadow-lg shadow-yellow-500/10"
                       : isTop2
                         ? "bg-slate-800/80 border-slate-400/40"
                         : isTop3

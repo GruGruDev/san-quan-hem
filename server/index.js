@@ -555,12 +555,16 @@ const getPlayerName = (value) =>
 const isSocketPayload = (value) =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 
-let waitingPlayer = null;
-let searchTimer = null;
+const matchmakingQueues = { "1v1": [], "2v2": [] };
+const searchTimers = new Map();
 const activeRooms = {};
 
-// HÀM 1: Random chọn 3 quán cho mỗi trận (chỉ 2ô, 3ô, 4ô)
-const selectRandomShops = () => {
+const getModeSettings = (mode = "1v1") =>
+  mode === "2v2"
+    ? { mode: "2v2", gridSize: 10, playerCount: 4 }
+    : { mode: "1v1", gridSize: 8, playerCount: 2 };
+
+const selectRandomShops = (mode = "1v1") => {
   const pool2 = [
     {
       id: "cavien",
@@ -577,29 +581,42 @@ const selectRandomShops = () => {
     { id: "quanoc", name: "Quán Ốc Quen", size: 4, icon: "/donuong.png" },
     { id: "quannhau", name: "Khu Nhậu Vỉa Hè", size: 4, icon: "/quannhau.png" },
   ];
+  const pool5 = [
+    {
+      id: "quannhau5",
+      name: "Khu Nhậu Vỉa Hè",
+      size: 5,
+      icon: "/quannhau.png",
+    },
+  ];
 
   const pickRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
-  return [pickRandom(pool2), pickRandom(pool3), pickRandom(pool4)];
+  return mode === "2v2"
+    ? [pickRandom(pool2), pickRandom(pool3), pickRandom(pool4), ...pool5]
+    : [pickRandom(pool2), pickRandom(pool3), pickRandom(pool4)];
 };
 
-// HÀM 2: Bot đặt quán dựa trên 3 quán đã chọn
-const generateBotBoard = (shops) => {
-  const board = Array(64).fill(null);
+const generateBotBoard = (shops, gridSize = 8) => {
+  const board = Array(gridSize * gridSize).fill(null);
   shops.forEach((shop) => {
     let placed = false;
     while (!placed) {
       const isHorizontal = Math.random() < 0.5;
-      const startIndex = Math.floor(Math.random() * 64);
-      let row = Math.floor(startIndex / 8);
-      let col = startIndex % 8;
+      const startIndex = Math.floor(Math.random() * board.length);
+      let row = Math.floor(startIndex / gridSize);
+      let col = startIndex % gridSize;
 
-      if (isHorizontal && col + shop.size > 8) col = 8 - shop.size;
-      if (!isHorizontal && row + shop.size > 8) row = 8 - shop.size;
+      if (isHorizontal && col + shop.size > gridSize)
+        col = gridSize - shop.size;
+      if (!isHorizontal && row + shop.size > gridSize)
+        row = gridSize - shop.size;
 
-      const adjustedIndex = row * 8 + col;
+      const adjustedIndex = row * gridSize + col;
       const indices = [];
       for (let i = 0; i < shop.size; i++) {
-        indices.push(isHorizontal ? adjustedIndex + i : adjustedIndex + i * 8);
+        indices.push(
+          isHorizontal ? adjustedIndex + i : adjustedIndex + i * gridSize,
+        );
       }
 
       const isOverlap = indices.some((idx) => board[idx] !== null);
@@ -617,13 +634,14 @@ const generateBotBoard = (shops) => {
 // HÀM 3: Kiểm tra & làm sạch sơ đồ do client gửi lên.
 // - Đúng 3 quán của phòng, đúng số ô, nằm thẳng hàng liền nhau (ngang hoặc dọc)
 // - Xây lại bàn cờ từ đầu để loại bỏ mọi cờ "shot" do client tự gắn
-const sanitizeBoard = (board, shops) => {
-  if (!Array.isArray(board) || board.length !== 64) return null;
+const sanitizeBoard = (board, shops, gridSize = 8) => {
+  if (!Array.isArray(board) || board.length !== gridSize * gridSize)
+    return null;
 
-  const clean = Array(64).fill(null);
+  const clean = Array(gridSize * gridSize).fill(null);
   const indicesByShop = {};
 
-  for (let i = 0; i < 64; i++) {
+  for (let i = 0; i < gridSize * gridSize; i++) {
     const cell = board[i];
     if (cell === null || cell === undefined) continue;
 
@@ -642,9 +660,11 @@ const sanitizeBoard = (board, shops) => {
     const first = idxs[0];
     const last = idxs[idxs.length - 1];
     const isHorizontal =
-      Math.floor(first / 8) === Math.floor(last / 8) &&
+      Math.floor(first / gridSize) === Math.floor(last / gridSize) &&
       idxs.every((v, k) => k === 0 || v === idxs[k - 1] + 1);
-    const isVertical = idxs.every((v, k) => k === 0 || v === idxs[k - 1] + 8);
+    const isVertical = idxs.every(
+      (v, k) => k === 0 || v === idxs[k - 1] + gridSize,
+    );
 
     if (!isHorizontal && !isVertical) return null;
   }
@@ -652,86 +672,429 @@ const sanitizeBoard = (board, shops) => {
   return clean;
 };
 
+const publicRoomPlayers = (room) =>
+  Object.values(room.players).map((player) => ({
+    socketId: player.socketId,
+    name: player.name,
+    team: player.team,
+    ready: Boolean(player.ready),
+    eliminated: Boolean(player.eliminated),
+    connected: player.connected !== false,
+  }));
+
+const roomOverview = (room) => ({
+  roomId: room.roomId,
+  roomCode: room.roomCode || null,
+  hostSocketId: room.hostSocketId,
+  mode: room.mode,
+  gridSize: room.gridSize,
+  playerCount: room.playerCount,
+  gameState: room.gameState,
+  shops: room.shops,
+  players: publicRoomPlayers(room),
+  turn: room.turn,
+});
+
+const emitRoomUpdate = (room) => {
+  const overview = roomOverview(room);
+  io.to(room.roomId).emit("room_lobby_update", overview);
+  return overview;
+};
+
+const createGameRoom = (roomId, mode, players, options = {}) => {
+  const settings = getModeSettings(mode);
+  const room = {
+    roomId,
+    roomCode: options.roomCode || null,
+    hostSocketId: options.hostSocketId || null,
+    isPrivate: Boolean(options.isPrivate),
+    isBotRoom: Boolean(options.isBotRoom),
+    botSocketId: options.botSocketId || null,
+    mode: settings.mode,
+    gridSize: settings.gridSize,
+    playerCount: settings.playerCount,
+    players,
+    shops: selectRandomShops(settings.mode),
+    gameState: options.waiting ? "WAITING_FRIEND" : "SETUP",
+    turn: null,
+    turnOrder: [],
+    turnIndex: 0,
+  };
+  activeRooms[roomId] = room;
+  return room;
+};
+
+const notifyMatchFound = (room, message) => {
+  room.gameState = "SETUP";
+  const players = publicRoomPlayers(room);
+  Object.values(room.players).forEach((player) => {
+    if (player.isBot) return;
+    io.to(player.socketId).emit("match_found", {
+      ...roomOverview(room),
+      team: player.team,
+      message,
+    });
+  });
+  io.to(room.roomId).emit("room_lobby_update", {
+    ...roomOverview(room),
+    players,
+  });
+};
+
+const getTurnOrder = (room) => {
+  const redPlayers = Object.values(room.players).filter(
+    (player) => player.team === "red",
+  );
+  const bluePlayers = Object.values(room.players).filter(
+    (player) => player.team === "blue",
+  );
+  const order = [];
+  const firstTeam = Math.random() < 0.5 ? "red" : "blue";
+  const firstPlayers = firstTeam === "red" ? redPlayers : bluePlayers;
+  const secondPlayers = firstTeam === "red" ? bluePlayers : redPlayers;
+
+  for (
+    let i = 0;
+    i < Math.max(firstPlayers.length, secondPlayers.length);
+    i++
+  ) {
+    if (firstPlayers[i]) order.push(firstPlayers[i].socketId);
+    if (secondPlayers[i]) order.push(secondPlayers[i].socketId);
+  }
+  return order;
+};
+
+const isBoardDestroyed = (board) =>
+  board.some((cell) => cell?.shopId) &&
+  board.every((cell) => !cell?.shopId || cell.shot === "HIT");
+
+const getWinningTeam = (room) => {
+  for (const team of ["red", "blue"]) {
+    const teamPlayers = Object.values(room.players).filter(
+      (player) => player.team === team,
+    );
+    if (
+      teamPlayers.length &&
+      teamPlayers.every((player) => player.eliminated)
+    ) {
+      return team === "red" ? "blue" : "red";
+    }
+  }
+  return null;
+};
+
+const getNextTurnId = (room, previousTurnId, keepTurn = false) => {
+  const currentPlayer = room.players[previousTurnId];
+  if (keepTurn && currentPlayer && !currentPlayer.eliminated) {
+    return previousTurnId;
+  }
+
+  for (let offset = 1; offset <= room.turnOrder.length; offset++) {
+    const index = (room.turnIndex + offset) % room.turnOrder.length;
+    const candidateId = room.turnOrder[index];
+    const candidate = room.players[candidateId];
+    if (candidate && !candidate.eliminated) {
+      room.turnIndex = index;
+      return candidateId;
+    }
+  }
+  return null;
+};
+
+const startRoomIfReady = (room) => {
+  const players = Object.values(room.players);
+  if (
+    room.gameState !== "SETUP" ||
+    players.length !== room.playerCount ||
+    !players.every((player) => player.ready)
+  ) {
+    emitRoomUpdate(room);
+    return false;
+  }
+
+  room.gameState = "PLAYING";
+  room.turnOrder = getTurnOrder(room);
+  room.turnIndex = Math.floor(Math.random() * room.turnOrder.length);
+  room.turn = room.turnOrder[room.turnIndex];
+  io.to(room.roomId).emit("start_coin_flip", {
+    firstTurnId: room.turn,
+    firstTeam: room.players[room.turn]?.team,
+    turnOrder: room.turnOrder,
+  });
+  return true;
+};
+
+const updateFinishedGameStats = async (room, winnerTeam) => {
+  if (room.isBotRoom) {
+    const human = Object.values(room.players).find((player) => !player.isBot);
+    if (human?.userId) {
+      await updatePlayerStats(human.userId, winnerTeam === human.team);
+    }
+    return;
+  }
+
+  await Promise.all(
+    Object.values(room.players)
+      .filter((player) => player.userId)
+      .map((player) =>
+        updatePlayerStats(player.userId, player.team === winnerTeam),
+      ),
+  );
+};
+
+const broadcastGameOver = async (room, winnerTeam) => {
+  room.gameState = "FINISHED";
+  io.to(room.roomId).emit("game_over", {
+    winnerTeam,
+    winnerPlayerIds: Object.values(room.players)
+      .filter((player) => player.team === winnerTeam)
+      .map((player) => player.socketId),
+  });
+  try {
+    await updateFinishedGameStats(room, winnerTeam);
+  } catch (err) {
+    console.error("Lỗi cập nhật kết quả:", err.message);
+  }
+};
+
+const applyShot = async (room, shooterId, targetId, targetIndex) => {
+  const shooter = room.players[shooterId];
+  const target = room.players[targetId];
+  const targetBoard = target.board;
+  const targetCell = targetBoard[targetIndex];
+  const isHit = Boolean(targetCell?.shopId);
+  let sunkShopId = null;
+
+  if (isHit) {
+    targetCell.shot = "HIT";
+    const sameShop = targetBoard.filter(
+      (cell) => cell?.shopId === targetCell.shopId,
+    );
+    if (sameShop.every((cell) => cell.shot === "HIT")) {
+      sunkShopId = targetCell.shopId;
+    }
+  } else {
+    targetBoard[targetIndex] = { shot: "MISS" };
+  }
+
+  target.eliminated = isBoardDestroyed(targetBoard);
+  const winnerTeam = getWinningTeam(room);
+  const nextTurnId = winnerTeam ? null : getNextTurnId(room, shooterId, isHit);
+  room.turn = nextTurnId;
+
+  io.to(room.roomId).emit("shot_result", {
+    shooterId,
+    targetSocketId: targetId,
+    targetIndex,
+    isHit,
+    sunkShopId,
+    nextTurnId,
+    players: publicRoomPlayers(room),
+  });
+
+  if (winnerTeam) {
+    await broadcastGameOver(room, winnerTeam);
+  } else if (room.isBotRoom && nextTurnId === room.botSocketId) {
+    setTimeout(() => triggerBotShot(room.roomId), isHit ? 2500 : 1000);
+  }
+};
+
 const triggerBotShot = (roomId) => {
   const room = activeRooms[roomId];
   if (!room || room.gameState !== "PLAYING" || room.turn !== room.botSocketId)
     return;
 
-  const playerSocketId = Object.keys(room.players).find(
-    (id) => id !== room.botSocketId,
+  const targetPlayers = Object.values(room.players).filter(
+    (player) =>
+      player.team !== room.players[room.botSocketId].team && !player.eliminated,
   );
-  const playerBoard = room.players[playerSocketId].board;
+  const targets = targetPlayers.flatMap((player) =>
+    player.board
+      .map((cell, index) =>
+        cell?.shot ? null : { socketId: player.socketId, index },
+      )
+      .filter(Boolean),
+  );
+  if (!targets.length) return;
 
-  const availableIndices = playerBoard
-    .map((cell, idx) => (cell && cell.shot ? null : idx))
-    .filter((idx) => idx !== null);
-  if (availableIndices.length === 0) return;
+  const target = targets[Math.floor(Math.random() * targets.length)];
+  io.to(roomId).emit("opponent_aiming", {
+    shooterId: room.botSocketId,
+    targetSocketId: target.socketId,
+    targetIndex: target.index,
+  });
 
-  const targetIndex =
-    availableIndices[Math.floor(Math.random() * availableIndices.length)];
-  const targetCell = playerBoard[targetIndex];
-
-  // 🎯 PHÁT TÍN HIỆU KÍNH NGẮM CHO NGƯỜI CHƠI THẤY
-  io.to(playerSocketId).emit("opponent_aiming", targetIndex);
-
-  // ⏳ Đợi 1 giây (1000ms) để tạo áp lực tâm lý rồi mới bóp cò
   setTimeout(() => {
-    // Kéo dữ liệu room lại một lần nữa để tránh lỗi nếu người chơi thoát game trong lúc Bot đang ngắm
     const currentRoom = activeRooms[roomId];
-    if (!currentRoom || currentRoom.gameState !== "PLAYING") return;
-
-    const isHit = !!(targetCell && targetCell.shopId !== undefined);
-    let sunkShopId = null;
-
-    if (isHit) {
-      targetCell.shot = "HIT";
-      const shopId = targetCell.shopId;
-      const sameShopCells = playerBoard.filter((c) => c && c.shopId === shopId);
-      if (sameShopCells.every((c) => c.shot === "HIT")) sunkShopId = shopId;
-    } else {
-      playerBoard[targetIndex] = { shot: "MISS" };
-    }
-
-    const nextTurn = isHit ? currentRoom.botSocketId : playerSocketId;
-    currentRoom.turn = nextTurn;
-
-    io.to(roomId).emit("shot_result", {
-      shooter: currentRoom.botSocketId,
-      targetIndex,
-      isHit,
-      sunkShopId,
-      nextTurn,
-    });
-
-    // Kiểm tra xem Bot đã thắng chưa
     if (
-      playerBoard.every((cell) => !cell || !cell.shopId || cell.shot === "HIT")
+      !currentRoom ||
+      currentRoom.gameState !== "PLAYING" ||
+      currentRoom.turn !== currentRoom.botSocketId
     ) {
-      currentRoom.gameState = "FINISHED";
-      io.to(roomId).emit("game_over", { winner: currentRoom.botSocketId });
-    } else if (isHit && nextTurn === currentRoom.botSocketId) {
-      // Nếu bắn trúng, Bot được bắn tiếp sau 2.5 giây
-      setTimeout(() => triggerBotShot(roomId), 2500);
+      return;
     }
+    applyShot(
+      currentRoom,
+      currentRoom.botSocketId,
+      target.socketId,
+      target.index,
+    );
   }, 1000);
 };
 
-// Đưa phòng về trạng thái xếp quán cho ván tái đấu (bốc lại 3 quán mới)
 const resetRoomForRematch = (room) => {
-  room.shops = selectRandomShops();
+  room.shops = selectRandomShops(room.mode);
   room.gameState = "SETUP";
   room.turn = null;
+  room.turnOrder = [];
+  room.turnIndex = 0;
 
   Object.values(room.players).forEach((p) => {
     p.rematch = false;
+    p.eliminated = false;
     if (room.isBotRoom && p.socketId === room.botSocketId) {
-      p.board = generateBotBoard(room.shops);
+      p.board = generateBotBoard(room.shops, room.gridSize);
       p.ready = true;
     } else {
       p.board = [];
       p.ready = false;
     }
   });
+};
+
+const removeFromMatchmaking = (socketId) => {
+  for (const mode of ["1v1", "2v2"]) {
+    matchmakingQueues[mode] = matchmakingQueues[mode].filter(
+      (entry) => entry.socketId !== socketId,
+    );
+  }
+  const timer = searchTimers.get(socketId);
+  if (timer) clearTimeout(timer);
+  searchTimers.delete(socketId);
+};
+
+const createMatchFromQueue = (mode, entries) => {
+  const roomId = `match_${crypto.randomBytes(8).toString("hex")}`;
+  const players = Object.fromEntries(
+    entries.map((entry, index) => [
+      entry.socketId,
+      {
+        socketId: entry.socketId,
+        name: entry.name,
+        userId: entry.userId,
+        team: index % 2 === 0 ? "red" : "blue",
+        board: [],
+        ready: false,
+        eliminated: false,
+        isBot: false,
+      },
+    ]),
+  );
+  const room = createGameRoom(roomId, mode, players);
+
+  entries.forEach((entry) => {
+    entry.socket.join(roomId);
+    const timer = searchTimers.get(entry.socketId);
+    if (timer) clearTimeout(timer);
+    searchTimers.delete(entry.socketId);
+  });
+  notifyMatchFound(
+    room,
+    mode === "2v2"
+      ? "Đã tìm đủ 4 phượt thủ! Hai đội sẵn sàng xếp quán."
+      : "Đã tìm thấy đối thủ! Sẵn sàng xếp quán.",
+  );
+};
+
+const startBotMatch = (entry) => {
+  const roomId = `bot_${crypto.randomBytes(8).toString("hex")}`;
+  const botSocketId = `bot_${crypto.randomBytes(8).toString("hex")}`;
+  const players = {
+    [entry.socketId]: {
+      socketId: entry.socketId,
+      name: entry.name,
+      userId: entry.userId,
+      team: "red",
+      board: [],
+      ready: false,
+      eliminated: false,
+      isBot: false,
+    },
+    [botSocketId]: {
+      socketId: botSocketId,
+      name: "Bot Sếp Gọi 🤖",
+      userId: null,
+      team: "blue",
+      board: [],
+      ready: true,
+      eliminated: false,
+      isBot: true,
+    },
+  };
+  const room = createGameRoom(roomId, "1v1", players, {
+    isBotRoom: true,
+    botSocketId,
+  });
+  players[botSocketId].board = generateBotBoard(room.shops, room.gridSize);
+  entry.socket.join(roomId);
+  notifyMatchFound(room, "Đã ghép trận cùng Cao Thủ AI!");
+};
+
+const tryMatchmaking = (mode) => {
+  const needed = getModeSettings(mode).playerCount;
+  const queue = matchmakingQueues[mode];
+  while (queue.length >= needed) {
+    const entries = queue.splice(0, needed);
+    createMatchFromQueue(mode, entries);
+  }
+};
+
+const handleRoomDeparture = async (room, socketId) => {
+  const player = room.players[socketId];
+  if (!player) return;
+
+  if (room.gameState === "WAITING_FRIEND") {
+    if (room.hostSocketId === socketId) {
+      io.to(room.roomId).emit("opponent_left", "Chủ phòng đã hủy phòng.");
+      delete activeRooms[room.roomId];
+    } else {
+      delete room.players[socketId];
+      io.to(room.roomId).emit("room_lobby_update", roomOverview(room));
+    }
+    return;
+  }
+
+  if (room.gameState === "SETUP") {
+    io.to(room.roomId).emit(
+      "opponent_left",
+      "Một người đã rời phòng trước khi trận bắt đầu. Hãy tạo trận mới.",
+    );
+    delete activeRooms[room.roomId];
+    return;
+  }
+
+  if (room.gameState === "FINISHED") {
+    io.to(room.roomId).emit("opponent_left", "Người chơi đã rời phòng.");
+    delete activeRooms[room.roomId];
+    return;
+  }
+
+  player.eliminated = true;
+  player.connected = false;
+  const winnerTeam = getWinningTeam(room);
+  if (!winnerTeam && room.turn === socketId) {
+    room.turn = getNextTurnId(room, socketId, false);
+  }
+  io.to(room.roomId).emit("room_player_left", {
+    playerId: socketId,
+    players: publicRoomPlayers(room),
+    nextTurnId: room.turn,
+  });
+  if (winnerTeam) {
+    await broadcastGameOver(room, winnerTeam);
+  } else if (room.isBotRoom && room.turn === room.botSocketId) {
+    setTimeout(() => triggerBotShot(room.roomId), 1000);
+  }
 };
 
 // --- CHÍNH TẮC SOCKET CONNECTION SCOPE ---
@@ -742,125 +1105,45 @@ io.on("connection", (socket) => {
   // Tìm đối thủ ghép ngẫu nhiên
   socket.on("tim_doi_thu", (data = {}) => {
     if (!isSocketPayload(data)) return;
+    const mode = data.mode === "2v2" ? "2v2" : "1v1";
     const playerName = getPlayerName(data.name);
     const userId = socket.data.userId;
+    removeFromMatchmaking(socket.id);
 
-    // Đang chờ rồi thì bỏ qua, tránh tạo thêm timer thừa
-    if (waitingPlayer && waitingPlayer.socketId === socket.id) return;
+    if (
+      userId &&
+      matchmakingQueues[mode].some((entry) => entry.userId === userId)
+    ) {
+      socket.emit("waiting_for_opponent", "Tài khoản này đã ở trong hàng chờ.");
+      return;
+    }
 
-    if (waitingPlayer && waitingPlayer.socketId !== socket.id) {
-      if (userId && waitingPlayer.userId === userId) {
-        socket.emit(
-          "waiting_for_opponent",
-          "Phát hiện trùng tài khoản! Đang chờ phượt thủ khác...",
-        );
-        return;
-      }
+    const entry = { socket, socketId: socket.id, name: playerName, userId };
+    matchmakingQueues[mode].push(entry);
+    socket.emit(
+      "waiting_for_opponent",
+      mode === "2v2"
+        ? "Đang tìm đủ 4 phượt thủ cho trận 2v2..."
+        : "Đang tìm phượt thủ cho trận 1v1...",
+    );
+    tryMatchmaking(mode);
 
-      if (searchTimer) clearTimeout(searchTimer);
-
-      const roomId = `room_${Date.now()}`;
-      const player1 = waitingPlayer;
-      const player2 = { socketId: socket.id, name: playerName, userId };
-
-      const roomShops = selectRandomShops();
-
-      activeRooms[roomId] = {
-        players: {
-          [player1.socketId]: {
-            socketId: player1.socketId,
-            name: player1.name,
-            userId: player1.userId,
-            team: "red",
-            board: [],
-            ready: false,
-          },
-          [player2.socketId]: {
-            ...player2,
-            team: "blue",
-            board: [],
-            ready: false,
-          },
-        },
-        shops: roomShops,
-        gameState: "SETUP",
-        turn: null,
-        isBotRoom: false,
-      };
-
-      player1.socket.join(roomId);
-      socket.join(roomId);
-
-      player1.socket.emit("match_found", {
-        roomId,
-        team: "red",
-        shops: roomShops,
-        message: "Đã tìm thấy đối thủ!",
-      });
-      socket.emit("match_found", {
-        roomId,
-        team: "blue",
-        shops: roomShops,
-        message: "Đã tìm thấy đối thủ!",
-      });
-
-      waitingPlayer = null;
-    } else {
-      waitingPlayer = { socket, socketId: socket.id, name: playerName, userId };
-      socket.emit("waiting_for_opponent", "Đang chờ phượt thủ khác vào hẻm...");
-
-      searchTimer = setTimeout(() => {
-        if (waitingPlayer && waitingPlayer.socketId === socket.id) {
-          const roomId = `room_bot_${Date.now()}`;
-          const botSocketId = `bot_${Date.now()}`;
-          const roomShops = selectRandomShops();
-
-          activeRooms[roomId] = {
-            players: {
-              [socket.id]: {
-                socketId: socket.id,
-                name: playerName,
-                userId,
-                team: "red",
-                board: [],
-                ready: false,
-              },
-              [botSocketId]: {
-                socketId: botSocketId,
-                name: "Bot Sếp Gọi 🤖",
-                userId: null,
-                team: "blue",
-                board: generateBotBoard(roomShops),
-                ready: true,
-              },
-            },
-            shops: roomShops,
-            gameState: "SETUP",
-            turn: null,
-            isBotRoom: true,
-            botSocketId,
-          };
-
-          socket.join(roomId);
-          socket.emit("match_found", {
-            roomId,
-            team: "red",
-            shops: roomShops,
-            message: "Đã ghép trận cùng Cao Thủ AI!",
-          });
-          waitingPlayer = null;
+    if (mode === "1v1" && matchmakingQueues[mode].includes(entry)) {
+      const timer = setTimeout(() => {
+        if (!matchmakingQueues[mode].includes(entry)) return;
+        tryMatchmaking(mode);
+        if (matchmakingQueues[mode].includes(entry)) {
+          removeFromMatchmaking(socket.id);
+          startBotMatch(entry);
         }
       }, 8000);
+      searchTimers.set(socket.id, timer);
     }
   });
 
   socket.on("cancel_search", () => {
-    if (waitingPlayer && waitingPlayer.socketId === socket.id) {
-      if (searchTimer) clearTimeout(searchTimer);
-      waitingPlayer = null;
-    }
+    removeFromMatchmaking(socket.id);
 
-    // Hủy luôn Hẻm Kín đang chờ bạn bè (nếu có) để không ai vào nhầm phòng đã hủy
     for (const [rid, r] of Object.entries(activeRooms)) {
       if (
         r.isPrivate &&
@@ -868,7 +1151,7 @@ io.on("connection", (socket) => {
         r.players[socket.id]
       ) {
         socket.leave(rid);
-        delete activeRooms[rid];
+        handleRoomDeparture(r, socket.id);
       }
     }
   });
@@ -878,37 +1161,67 @@ io.on("connection", (socket) => {
     if (!isSocketPayload(data)) return;
     const playerName = getPlayerName(data.name);
     const userId = socket.data.userId;
-
-    const roomCode = Math.random().toString(36).substring(2, 7).toUpperCase();
+    const mode = data.mode === "2v2" ? "2v2" : "1v1";
+    const roomCode = Array.from(
+      { length: 5 },
+      () => "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"[crypto.randomInt(36)],
+    ).join("");
     const roomId = `private_${roomCode}`;
-    const roomShops = selectRandomShops();
-
-    activeRooms[roomId] = {
-      roomCode,
-      roomId,
-      isPrivate: true,
-      players: {
-        [socket.id]: {
-          socketId: socket.id,
-          name: playerName,
-          userId,
-          team: "red",
-          board: [],
-          ready: false,
-        },
+    const players = {
+      [socket.id]: {
+        socketId: socket.id,
+        name: playerName,
+        userId,
+        team: "red",
+        board: [],
+        ready: false,
+        eliminated: false,
+        isBot: false,
       },
-      shops: roomShops,
-      gameState: "WAITING_FRIEND",
-      turn: null,
-      isBotRoom: false,
     };
+    const room = createGameRoom(roomId, mode, players, {
+      roomCode,
+      hostSocketId: socket.id,
+      isPrivate: true,
+      waiting: true,
+    });
 
     socket.join(roomId);
     socket.emit("private_room_created", {
-      roomId,
-      roomCode,
+      ...roomOverview(room),
       message: `Đã tạo Hẻm Kín [${roomCode}]! Hãy gửi mã cho bạn bè.`,
     });
+    emitRoomUpdate(room);
+  });
+
+  socket.on("set_private_mode", (data = {}) => {
+    if (!isSocketPayload(data)) return;
+    const room = activeRooms[data.roomId];
+    if (
+      !room?.isPrivate ||
+      room.hostSocketId !== socket.id ||
+      room.gameState !== "WAITING_FRIEND"
+    ) {
+      return;
+    }
+
+    const settings = getModeSettings(data.mode);
+    if (Object.keys(room.players).length > settings.playerCount) {
+      socket.emit(
+        "join_private_error",
+        "Phòng đang có quá nhiều người cho mode này.",
+      );
+      return;
+    }
+    room.mode = settings.mode;
+    room.gridSize = settings.gridSize;
+    room.playerCount = settings.playerCount;
+    room.shops = selectRandomShops(settings.mode);
+    if (Object.keys(room.players).length === room.playerCount) {
+      notifyMatchFound(room, "Chủ phòng đã đổi mode. Trận đấu bắt đầu!");
+    } else {
+      emitRoomUpdate(room);
+    }
   });
 
   socket.on("join_private_room", (data = {}) => {
@@ -952,13 +1265,26 @@ io.on("connection", (socket) => {
       return;
     }
 
-    if (Object.keys(room.players).length >= 2) {
-      socket.emit("join_private_error", "Hẻm này đã đủ 2 phượt thủ!");
+    if (
+      room.gameState !== "WAITING_FRIEND" ||
+      Object.keys(room.players).length >= room.playerCount
+    ) {
+      socket.emit(
+        "join_private_error",
+        "Hẻm này đã đủ người hoặc trận đã bắt đầu!",
+      );
       return;
     }
 
-    const hostSocketId = Object.keys(room.players)[0];
-    if (userId && room.players[hostSocketId].userId === userId) {
+    if (room.players[socket.id]) {
+      socket.emit("join_private_error", "Bạn đã ở trong phòng này.");
+      return;
+    }
+
+    if (
+      userId &&
+      Object.values(room.players).some((player) => player.userId === userId)
+    ) {
       socket.emit(
         "join_private_error",
         "Bạn không thể tự vào phòng kín của chính mình!",
@@ -966,50 +1292,62 @@ io.on("connection", (socket) => {
       return;
     }
 
+    const redCount = Object.values(room.players).filter(
+      (player) => player.team === "red",
+    ).length;
+    const blueCount = Object.values(room.players).filter(
+      (player) => player.team === "blue",
+    ).length;
+
     room.players[socket.id] = {
       socketId: socket.id,
       name: playerName,
       userId,
-      team: "blue",
+      team: redCount <= blueCount ? "red" : "blue",
       board: [],
       ready: false,
+      eliminated: false,
+      isBot: false,
     };
-    room.gameState = "SETUP";
-
     socket.join(roomId);
+    emitRoomUpdate(room);
+    if (Object.keys(room.players).length === room.playerCount) {
+      notifyMatchFound(room, "Đã đủ người! Các đội sẵn sàng xếp quán.");
+    }
+  });
 
-    io.to(hostSocketId).emit("match_found", {
-      roomId,
-      team: "red",
-      shops: room.shops,
-      message: "Bạn bè đã vào Hẻm! Sẵn sàng giăng bẫy!",
-    });
+  socket.on("swap_teams", (data = {}) => {
+    if (!isSocketPayload(data)) return;
+    const room = activeRooms[data.roomId];
+    const player = room?.players[socket.id];
+    const target = room?.players[data.targetSocketId];
+    if (
+      !room ||
+      !player ||
+      !target ||
+      player === target ||
+      player.team === target.team ||
+      player.isBot ||
+      target.isBot ||
+      !["WAITING_FRIEND", "SETUP"].includes(room.gameState) ||
+      Object.values(room.players).some((entry) => entry.ready)
+    ) {
+      return;
+    }
 
-    socket.emit("match_found", {
-      roomId,
-      team: "blue",
-      shops: room.shops,
-      message: "Đã vào Hẻm thành công! Bắt đầu xếp quán!",
+    [player.team, target.team] = [target.team, player.team];
+    io.to(room.roomId).emit("teams_updated", {
+      players: publicRoomPlayers(room),
+      gameState: room.gameState,
     });
+    emitRoomUpdate(room);
   });
 
   // Chốt vị trí quán (Sẵn sàng)
   socket.on("ready_place_shops", (data = {}) => {
     if (!isSocketPayload(data)) return;
-    const { roomId: requestedRoomId, playerBoard } = data;
-    let roomId = requestedRoomId;
-    let room = activeRooms[roomId];
-
-    // Tự động tìm lại room nếu roomId bị sai lệch / nhầm lẫn
-    if (!room) {
-      for (const [rId, rData] of Object.entries(activeRooms)) {
-        if (rData.players && rData.players[socket.id]) {
-          room = rData;
-          roomId = rId;
-          break;
-        }
-      }
-    }
+    const { roomId } = data;
+    const room = activeRooms[roomId];
 
     if (!room || !room.players[socket.id]) {
       socket.emit(
@@ -1022,7 +1360,13 @@ io.on("connection", (socket) => {
     // Chỉ được chốt sơ đồ ở giai đoạn xếp quán — không đổi bàn cờ giữa trận
     if (room.gameState !== "SETUP") return;
 
-    const cleanBoard = sanitizeBoard(playerBoard, room.shops);
+    const player = room.players[socket.id];
+    if (player.ready) return;
+    const cleanBoard = sanitizeBoard(
+      data.playerBoard,
+      room.shops,
+      room.gridSize,
+    );
     if (!cleanBoard) {
       socket.emit(
         "board_rejected",
@@ -1031,23 +1375,13 @@ io.on("connection", (socket) => {
       return;
     }
 
-    room.players[socket.id].board = cleanBoard;
-    room.players[socket.id].ready = true;
+    player.board = cleanBoard;
+    player.ready = true;
+    const gameStarted = startRoomIfReady(room);
+    emitRoomUpdate(room);
 
-    // Kiểm tra tất cả người chơi trong phòng đã bấm ready chưa
-    const playerList = Object.values(room.players);
-    if (playerList.length >= 2 && playerList.every((p) => p.ready)) {
-      room.gameState = "PLAYING";
-      const playerIds = Object.keys(room.players);
-      const firstTurnId =
-        playerIds[Math.floor(Math.random() * playerIds.length)];
-      room.turn = firstTurnId;
-
-      io.to(roomId).emit("start_coin_flip", { firstTurnId });
-
-      if (room.isBotRoom && firstTurnId === room.botSocketId) {
-        setTimeout(() => triggerBotShot(roomId), 4000);
-      }
+    if (gameStarted && room.isBotRoom && room.turn === room.botSocketId) {
+      setTimeout(() => triggerBotShot(roomId), 4000);
     }
   });
 
@@ -1058,63 +1392,23 @@ io.on("connection", (socket) => {
     const room = activeRooms[roomId];
     if (!room || room.gameState !== "PLAYING" || room.turn !== socket.id)
       return;
-    if (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex > 63)
+    if (
+      !Number.isInteger(targetIndex) ||
+      targetIndex < 0 ||
+      targetIndex >= room.gridSize * room.gridSize
+    )
       return;
 
-    const opponentId = Object.keys(room.players).find((id) => id !== socket.id);
-    const opponentBoard = room.players[opponentId].board;
-    const targetCell = opponentBoard[targetIndex];
+    const shooter = room.players[socket.id];
+    const enemies = Object.values(room.players).filter(
+      (player) => player.team !== shooter.team && !player.eliminated,
+    );
+    const targetId = data.targetSocketId || enemies[0]?.socketId;
+    const target = room.players[targetId];
+    if (!target || target.team === shooter.team || target.eliminated) return;
+    if (target.board[targetIndex]?.shot) return;
 
-    // Ô đã bắn rồi thì bỏ qua (chặn spam ô trúng để ăn thêm lượt vô hạn)
-    if (targetCell && targetCell.shot) return;
-
-    const isHit = !!(targetCell && targetCell.shopId !== undefined);
-    let sunkShopId = null;
-
-    if (isHit) {
-      targetCell.shot = "HIT";
-      const shopId = targetCell.shopId;
-      const sameShopCells = opponentBoard.filter(
-        (c) => c && c.shopId === shopId,
-      );
-      if (sameShopCells.every((c) => c.shot === "HIT")) sunkShopId = shopId;
-    } else {
-      opponentBoard[targetIndex] = { shot: "MISS" };
-    }
-
-    const nextTurn = isHit ? socket.id : opponentId;
-    room.turn = nextTurn;
-
-    io.to(roomId).emit("shot_result", {
-      shooter: socket.id,
-      targetIndex,
-      isHit,
-      sunkShopId,
-      nextTurn,
-    });
-
-    if (
-      opponentBoard.every(
-        (cell) => !cell || !cell.shopId || cell.shot === "HIT",
-      )
-    ) {
-      room.gameState = "FINISHED";
-      io.to(roomId).emit("game_over", { winner: socket.id });
-
-      try {
-        if (!room.isBotRoom) {
-          const winnerUserId = room.players[socket.id]?.userId;
-          const loserUserId = room.players[opponentId]?.userId;
-
-          if (winnerUserId) await updatePlayerStats(winnerUserId, true);
-          if (loserUserId) await updatePlayerStats(loserUserId, false);
-        }
-      } catch (err) {
-        console.error("Lỗi cập nhật kết quả:", err);
-      }
-    } else if (room.isBotRoom && nextTurn === room.botSocketId) {
-      setTimeout(() => triggerBotShot(roomId), 2500);
-    }
+    await applyShot(room, socket.id, targetId, targetIndex);
   });
 
   // Truyền tín hiệu ghim vị trí ngắm bắn cho đối thủ
@@ -1124,11 +1418,22 @@ io.on("connection", (socket) => {
     const room = activeRooms[roomId];
     if (!room || room.gameState !== "PLAYING" || room.turn !== socket.id)
       return;
-    if (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex > 63)
+    const target = room.players[data.targetSocketId];
+    if (
+      !target ||
+      target.team === room.players[socket.id].team ||
+      target.eliminated ||
+      !Number.isInteger(targetIndex) ||
+      targetIndex < 0 ||
+      targetIndex >= room.gridSize * room.gridSize
+    )
       return;
 
-    // Gửi vị trí ngắm cho người còn lại trong phòng
-    socket.to(roomId).emit("opponent_aiming", targetIndex);
+    io.to(roomId).emit("opponent_aiming", {
+      shooterId: socket.id,
+      targetSocketId: target.socketId,
+      targetIndex,
+    });
   });
 
   // Tái đấu
@@ -1149,9 +1454,13 @@ io.on("connection", (socket) => {
     if (humans.every((p) => p.rematch)) {
       resetRoomForRematch(room);
       io.to(roomId).emit("rematch_accepted", {
-        message: "Cả hai cùng chọn chơi lại! Hãy đặt lại quán ăn!",
+        message: "Cả đội đã chọn chơi lại! Hãy đặt lại quán ăn!",
         shops: room.shops,
+        mode: room.mode,
+        gridSize: room.gridSize,
+        players: publicRoomPlayers(room),
       });
+      emitRoomUpdate(room);
     } else {
       socket
         .to(roomId)
@@ -1170,8 +1479,7 @@ io.on("connection", (socket) => {
     if (!room || !room.players[socket.id]) return;
 
     socket.leave(roomId);
-    socket.to(roomId).emit("opponent_left", "Đối thủ đã rời hẻm!");
-    delete activeRooms[roomId];
+    handleRoomDeparture(room, socket.id);
   });
 
   // Chat
@@ -1189,26 +1497,11 @@ io.on("connection", (socket) => {
 
   // Xử lý Ngắt kết nối
   socket.on("disconnect", async () => {
-    if (waitingPlayer && waitingPlayer.socketId === socket.id) {
-      if (searchTimer) clearTimeout(searchTimer);
-      waitingPlayer = null;
-    }
+    removeFromMatchmaking(socket.id);
 
     for (const [roomId, room] of Object.entries(activeRooms)) {
       if (room.players[socket.id]) {
-        if (room.gameState === "SETUP" || room.gameState === "PLAYING") {
-          const leaverUserId = room.players[socket.id].userId;
-          if (leaverUserId && !room.isBotRoom) {
-            try {
-              await updatePlayerStats(leaverUserId, false);
-            } catch (err) {
-              console.error("Lỗi cập nhật hình phạt sủi trận:", err);
-            }
-          }
-        }
-
-        io.to(roomId).emit("opponent_left", "Đối thủ đã rời hẻm!");
-        delete activeRooms[roomId];
+        await handleRoomDeparture(room, socket.id);
       }
     }
   });

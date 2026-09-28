@@ -50,7 +50,9 @@ export default function BottomPanel({
       {isSetup && (
         <div className="flex flex-col gap-2">
           {/* Thanh Chọn Quán Tinh Gọn */}
-          <div className="flex gap-2 justify-center items-center bg-slate-950 p-2 rounded-xl border border-slate-800">
+          <div
+            className={`flex gap-2 justify-center items-center bg-slate-950 p-2 rounded-xl border border-slate-800 ${shops.length > 3 ? "flex-wrap" : ""}`}
+          >
             {/* Render động 3 nút chọn quán */}
             {shops.map((shop) => {
               const isPlaced = placedShopIds.has(shop.id);
@@ -60,7 +62,7 @@ export default function BottomPanel({
                 <button
                   key={shop.id}
                   onClick={() => onSelectShop(shop.id)}
-                  className={`relative w-12 h-12 rounded-xl p-1 flex items-center justify-center transition border-2 ${
+                  className={`relative ${shops.length > 3 ? "w-10 h-10" : "w-12 h-12"} shrink-0 rounded-xl p-1 flex items-center justify-center transition border-2 ${
                     isSelected
                       ? "bg-amber-500/20 border-amber-400 scale-105 shadow-md shadow-amber-500/20"
                       : isPlaced
@@ -89,7 +91,7 @@ export default function BottomPanel({
               );
             })}
 
-            <div className="h-8 w-[1px] bg-slate-800 mx-1" />
+            <div className="h-8 w-px bg-slate-800 mx-1" />
 
             {/* Nút Xoay Ngang / Dọc */}
             <button
@@ -113,14 +115,14 @@ export default function BottomPanel({
             <button
               onClick={onConfirmPlaceShop}
               disabled={!isPreviewValid}
-              className="w-full bg-gradient-to-r from-amber-500 to-yellow-500 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 font-black py-3 rounded-xl shadow-lg active:scale-95 transition text-xs uppercase tracking-wider"
+              className="w-full bg-linear-to-r from-amber-500 to-yellow-500 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 font-black py-3 rounded-xl shadow-lg active:scale-95 transition text-xs uppercase tracking-wider"
             >
               📌 ĐẶT {currentShopObj.name.toUpperCase()}
             </button>
           ) : (
             <button
               onClick={onReady}
-              className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:brightness-110 text-white font-black py-3.5 rounded-xl shadow-lg active:scale-95 transition text-sm uppercase tracking-wider animate-pulse"
+              className="w-full bg-linear-to-r from-emerald-500 to-teal-600 hover:brightness-110 text-white font-black py-3.5 rounded-xl shadow-lg active:scale-95 transition text-sm uppercase tracking-wider animate-pulse"
             >
               🚀 SẴN SÀNG VÀO TRẬN!
             </button>

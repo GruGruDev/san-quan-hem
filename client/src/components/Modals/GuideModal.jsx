@@ -10,15 +10,21 @@ export default function GuideModal({ isOpen, onClose }) {
 
         <div className="text-xs text-slate-300 flex flex-col gap-2 leading-relaxed">
           <p>
-            1. <b>Đặt quán:</b> Chọn quán, xoay Ngang/Dọc và đặt đủ 3 quán vào
-            hẻm.
+            1. <b>Chọn trận:</b> 1v1 dùng map 8×8 với quán 2/3/4 ô; 2v2 dùng map
+            10×10 với quán 2/3/4/5 ô.
           </p>
           <p>
-            2. <b>Bắn lượt:</b> Chọn ô trên map đối thủ để bắn dò vị trí.
+            2. <b>Đặt quán:</b> Chọn quán, xoay ngang/dọc rồi đặt đủ quán trên
+            bàn của bạn. Có thể đổi phe trước khi bất kỳ ai sẵn sàng.
           </p>
           <p>
-            3. <b>Thưởng lượt:</b> Bắn <b>TRÚNG</b> được thưởng thêm phát nữa;
-            Bắn <b>TRƯỢT</b> chuyển lượt.
+            3. <b>Bắn lượt:</b> Hai đội luân phiên; trong 2v2, lượt kế tiếp
+            chuyển qua đồng đội. Chọn một bàn đối thủ để ngắm.
+          </p>
+          <p>
+            4. <b>Thưởng lượt:</b> Bắn <b>TRÚNG</b> được bắn tiếp; bắn
+            <b> TRƯỢT</b> chuyển lượt. Người hết toàn bộ quán bị loại; đội thắng
+            khi hạ hết bàn đối phương.
           </p>
         </div>
 

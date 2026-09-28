@@ -11,8 +11,10 @@ export default function LobbyScreen({
   onOpenPrivateRoom,
   currentUser,
   onLogout,
+  connectionError,
 }) {
   const [nameInput, setNameInput] = useState("");
+  const [selectedMode, setSelectedMode] = useState("1v1");
 
   const userWins = currentUser?.wins || 0;
   const userRank = getPlayerRank(userWins);
@@ -21,20 +23,20 @@ export default function LobbyScreen({
     e.preventDefault();
     const finalName =
       currentUser?.displayName || nameInput.trim() || "Phượt Thủ Hẻm";
-    onFindMatch(finalName);
+    onFindMatch(finalName, selectedMode);
   };
 
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center p-2 select-none font-sans">
       {/* Khung Mô Phỏng Màn Hình Mobile */}
-      <div className="w-full max-w-md rounded-3xl shadow-2xl overflow-hidden border-4 border-amber-900/60 flex flex-col h-[850px] max-h-screen relative">
+      <div className="w-full max-w-md rounded-3xl shadow-2xl overflow-hidden border-4 border-amber-900/60 flex flex-col h-212.5 max-h-screen relative">
         {/* HÌNH NỀN BG COZY VIỆT NAM (/bg.png) */}
         <div
           className="absolute inset-0 w-full h-full bg-cover bg-center transition-all duration-700"
           style={{ backgroundImage: `url('/bg.png')` }}
         >
           {/* Lớp Overlay phủ màu ánh đèn vàng cozy về đêm */}
-          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/80 via-amber-950/40 to-slate-950/90 backdrop-blur-[1px]" />
+          <div className="absolute inset-0 bg-linear-to-b from-slate-950/80 via-amber-950/40 to-slate-950/90 backdrop-blur-[1px]" />
         </div>
 
         {/* HEADER BAR */}
@@ -54,7 +56,7 @@ export default function LobbyScreen({
 
           {/* Logo Bảng Hiệu */}
           <div className="text-center flex flex-col items-center">
-            <div className="bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 text-slate-950 text-[9px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-widest shadow mb-0.5">
+            <div className="bg-linear-to-r from-amber-500 via-yellow-400 to-amber-500 text-slate-950 text-[9px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-widest shadow mb-0.5">
               Góc Phố Ăn Vặt
             </div>
             <h1 className="text-xl font-black text-amber-300 tracking-wider uppercase drop-shadow-[0_2px_10px_rgba(245,158,11,0.5)]">
@@ -109,7 +111,7 @@ export default function LobbyScreen({
             <h2 className="text-xl font-black text-amber-200 tracking-wide uppercase">
               ĐẠI CHIẾN ĂN VẶT
             </h2>
-            <p className="text-xs text-amber-100/70 leading-relaxed max-w-[260px] font-medium">
+            <p className="text-xs text-amber-100/70 leading-relaxed max-w-65 font-medium">
               Thưởng thức ly trà sữa, đĩa cá viên chiên và sẵn sàng giăng bẫy
               đối thủ trong hẻm nhỏ!
             </p>
@@ -154,6 +156,11 @@ export default function LobbyScreen({
 
             {/* FORM TÌM TRẬN & PHÒNG KÍN */}
             <form onSubmit={handleSubmit} className="flex flex-col gap-2.5">
+              {connectionError && (
+                <p className="rounded-lg border border-rose-500/30 bg-rose-950/70 px-3 py-2 text-[10px] font-bold text-rose-200">
+                  {connectionError}
+                </p>
+              )}
               {!currentUser && (
                 <div className="relative w-full">
                   <input
@@ -170,10 +177,24 @@ export default function LobbyScreen({
                 </div>
               )}
 
+              <div className="grid grid-cols-2 gap-2 rounded-xl border border-amber-500/20 bg-slate-950/80 p-1">
+                {["1v1", "2v2"].map((matchMode) => (
+                  <button
+                    key={matchMode}
+                    type="button"
+                    aria-pressed={selectedMode === matchMode}
+                    onClick={() => setSelectedMode(matchMode)}
+                    className={`rounded-lg py-2 text-[11px] font-black transition ${selectedMode === matchMode ? "bg-amber-400 text-slate-950" : "text-slate-300 hover:bg-slate-800"}`}
+                  >
+                    {matchMode} · {matchMode === "2v2" ? "10×10" : "8×8"}
+                  </button>
+                ))}
+              </div>
+
               {/* Nút Bắt Đầu Tìm Trận Ngẫu Nhiên */}
               <button
                 type="submit"
-                className="group relative w-full h-14 rounded-2xl bg-gradient-to-r from-amber-600 via-yellow-500 to-amber-600 p-0.5 shadow-[0_0_20px_rgba(245,158,11,0.4)] active:scale-95 transition-all duration-200"
+                className="group relative w-full h-14 rounded-2xl bg-linear-to-r from-amber-600 via-yellow-500 to-amber-600 p-0.5 shadow-[0_0_20px_rgba(245,158,11,0.4)] active:scale-95 transition-all duration-200"
               >
                 <div className="w-full h-full bg-slate-950/20 rounded-[14px] flex items-center justify-center gap-2 group-hover:bg-transparent transition">
                   <span className="text-xl">🛵</span>

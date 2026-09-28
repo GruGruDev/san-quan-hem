@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 
-export default function CoinFlipOverlay({ result, onComplete }) {
+export default function CoinFlipOverlay({
+  result,
+  onComplete,
+  isTeamMode = false,
+}) {
   const [flipping, setFlipping] = useState(true);
   const isFirst = result === "FIRST";
 
@@ -30,7 +34,7 @@ export default function CoinFlipOverlay({ result, onComplete }) {
       )}
 
       {/* Đồng xu Lật 3D */}
-      <div className="relative w-32 h-32 [perspective:1000px] mb-6">
+      <div className="relative w-32 h-32 perspective-[1000px] mb-6">
         <div
           className={`coin w-full h-full rounded-full shadow-2xl shadow-yellow-500/20 ${
             flipping ? "flip" : ""
@@ -44,12 +48,12 @@ export default function CoinFlipOverlay({ result, onComplete }) {
           }}
         >
           {/* Mặt Trước (Người chơi đi trước) */}
-          <div className="front bg-gradient-to-tr from-amber-600 via-yellow-400 to-amber-200 border-4 border-yellow-300 flex items-center justify-center text-5xl font-bold shadow-inner">
+          <div className="front bg-linear-to-tr from-amber-600 via-yellow-400 to-amber-200 border-4 border-yellow-300 flex items-center justify-center text-5xl font-bold shadow-inner">
             👑
           </div>
 
           {/* Mặt Sau (Đối thủ đi trước) */}
-          <div className="back bg-gradient-to-tr from-blue-600 via-indigo-400 to-purple-500 border-4 border-cyan-300 flex items-center justify-center text-5xl font-bold shadow-inner">
+          <div className="back bg-linear-to-tr from-blue-600 via-indigo-400 to-purple-500 border-4 border-cyan-300 flex items-center justify-center text-5xl font-bold shadow-inner">
             🛡️
           </div>
         </div>
@@ -74,8 +78,8 @@ export default function CoinFlipOverlay({ result, onComplete }) {
               }`}
             >
               {isFirst
-                ? "🎉 BẠN ĐƯỢC BẮN TRƯỚC!"
-                : "🛡️ ĐỐI THỦ ĐƯỢC BẮN TRƯỚC!"}
+                ? `🎉 ${isTeamMode ? "ĐỘI BẠN" : "BẠN"} ĐƯỢC BẮN TRƯỚC!`
+                : `🛡️ ${isTeamMode ? "ĐỘI ĐỐI THỦ" : "ĐỐI THỦ"} ĐƯỢC BẮN TRƯỚC!`}
             </h2>
             <p className="text-xs text-slate-200 font-bold bg-slate-800/80 px-4 py-1.5 rounded-full border border-slate-700 shadow-lg">
               {isFirst ? "Xả đạn ngay lập tức!" : "Hãy chuẩn bị phòng thủ!"}

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import io from "socket.io-client";
 
 // Import Constants
-import { SHOPS, TAUNT_TEXTS } from "./constants/game";
+import { BOARD_SIZES, SHOPS, TAUNT_TEXTS } from "./constants/game";
 
 // Import Audio Utilities
 import { SERVER_URL } from "./utils/api";
@@ -16,6 +16,7 @@ import Header from "./components/Header";
 import LoadingScreen from "./components/LoadingScreen";
 import LobbyScreen from "./components/LobbyScreen";
 import ResultScreen from "./components/ResultScreen";
+import RoomRoster from "./components/RoomRoster";
 import SearchingScreen from "./components/SearchingScreen";
 
 // Import Modals
@@ -29,6 +30,8 @@ import SettingsModal from "./components/Modals/SettingsModal";
 // Kết nối Socket.IO
 const socket = io(SERVER_URL, {
   autoConnect: false,
+  transports: ["websocket", "polling"],
+  tryAllTransports: true,
 });
 
 export default function App() {
@@ -75,6 +78,17 @@ export default function App() {
   const [gameState, setGameState] = useState("LOBBY");
   const [playerName, setPlayerName] = useState("");
   const [team, setTeam] = useState("red");
+  const [mode, setMode] = useState("1v1");
+  const [gridSize, setGridSize] = useState(BOARD_SIZES["1v1"]);
+  const [roomPlayers, setRoomPlayers] = useState([]);
+  const [roomHostSocketId, setRoomHostSocketId] = useState(null);
+  const [roomLobbyStatus, setRoomLobbyStatus] = useState(null);
+  const [selectedTargetId, setSelectedTargetId] = useState(null);
+  const [connectionError, setConnectionError] = useState("");
+  const gameConfigRef = useRef({ gridSize, team, mode });
+  useEffect(() => {
+    gameConfigRef.current = { gridSize, team, mode };
+  }, [gridSize, team, mode]);
 
   const [roomId, setRoomId] = useState(null);
   const roomIdRef = useRef(roomId);
@@ -87,10 +101,13 @@ export default function App() {
   const [selectedShop, setSelectedShop] = useState(SHOPS[0]?.id || "cavien");
   const [orientation, setOrientation] = useState("HORIZONTAL");
   const [previewIndex, setPreviewIndex] = useState(null);
-  const [myBoard, setMyBoard] = useState(Array(64).fill(null));
-  const [opponentHits, setOpponentHits] = useState(Array(64).fill(null));
+  const [myBoard, setMyBoard] = useState(
+    Array(BOARD_SIZES["1v1"] ** 2).fill(null),
+  );
+  const [opponentHitsByPlayer, setOpponentHitsByPlayer] = useState({});
 
   const [isMyTurn, setIsMyTurn] = useState(false);
+  const [currentTurnId, setCurrentTurnId] = useState(null);
   const [coinFlipResult, setCoinFlipResult] = useState(null);
   const [recentShot, setRecentShot] = useState(null);
   const [opponentAimingIndex, setOpponentAimingIndex] = useState(null);
@@ -106,6 +123,17 @@ export default function App() {
   const [createdRoomCode, setCreatedRoomCode] = useState(null);
 
   const getToken = () => localStorage.getItem("token");
+  const opposingPlayers = roomPlayers.filter(
+    (player) => player.team !== team && !player.eliminated,
+  );
+  const targetSocketId = opposingPlayers.some(
+    (player) => player.socketId === selectedTargetId,
+  )
+    ? selectedTargetId
+    : opposingPlayers[0]?.socketId;
+  const opponentHits =
+    opponentHitsByPlayer[targetSocketId] ||
+    Array(gridSize * gridSize).fill(null);
 
   const refreshSocketAuth = () => {
     socket.auth = { token: getToken() };
@@ -161,29 +189,42 @@ export default function App() {
     refreshSocketAuth();
   };
 
-  const resetGameData = (newShops = activeShops) => {
-    setMyBoard(Array(64).fill(null));
-    setOpponentHits(Array(64).fill(null));
+  const resetGameData = (newShops = activeShops, newGridSize = gridSize) => {
+    setGridSize(newGridSize);
+    setMyBoard(Array(newGridSize * newGridSize).fill(null));
+    setOpponentHitsByPlayer({});
     setSelectedShop(newShops[0]?.id || "cavien");
     setOrientation("HORIZONTAL");
     setPreviewIndex(null);
     setIsMyTurn(false);
+    setCurrentTurnId(null);
     setCoinFlipResult(null);
     setRecentShot(null);
     setWinner(null);
     setTurnTimeLeft(25);
     setOpponentAimingIndex(null);
+    setSelectedTargetId(null);
   };
 
   // --- SOCKET LISTENERS ---
   useEffect(() => {
     socket.auth = { token: getToken() };
+    socket.on("connect", () => setConnectionError(""));
+    socket.on("connect_error", () => {
+      setConnectionError("Mất kết nối máy chủ. Đang thử kết nối lại...");
+    });
     socket.connect();
 
     socket.on("match_found", (data) => {
       const roomShops = data.shops || SHOPS;
+      const roomMode = data.mode === "2v2" ? "2v2" : "1v1";
+      const roomGridSize = data.gridSize || BOARD_SIZES[roomMode];
+      setMode(roomMode);
+      setRoomPlayers(data.players || []);
+      setRoomHostSocketId(data.hostSocketId || null);
+      setRoomLobbyStatus(null);
       setActiveShops(roomShops);
-      resetGameData(roomShops);
+      resetGameData(roomShops, roomGridSize);
 
       setRoomId(data.roomId);
       setTeam(data.team);
@@ -192,6 +233,7 @@ export default function App() {
       setShowPrivateModal(false);
       setCreatedRoomCode(null);
       setMessages([{ sender: "Hệ thống", text: data.message }]);
+      setConnectionError("");
       // Đóng hộp thoại alert nếu đang mở dở
       setCustomAlert((prev) => ({ ...prev, show: false }));
     });
@@ -203,6 +245,48 @@ export default function App() {
     socket.on("private_room_created", (data) => {
       setCreatedRoomCode(data.roomCode);
       setRoomId(data.roomId);
+      setMode(data.mode || "1v1");
+      setGridSize(data.gridSize || BOARD_SIZES[data.mode] || 8);
+      setRoomPlayers(data.players || []);
+      setRoomHostSocketId(data.hostSocketId || socket.id);
+      setRoomLobbyStatus(data.gameState || "WAITING_FRIEND");
+    });
+
+    socket.on("room_lobby_update", (data) => {
+      setRoomId(data.roomId || null);
+      setMode(data.mode || "1v1");
+      setGridSize(data.gridSize || BOARD_SIZES[data.mode] || 8);
+      setActiveShops(data.shops || SHOPS);
+      setRoomPlayers(data.players || []);
+      setRoomHostSocketId(data.hostSocketId || null);
+      setRoomLobbyStatus(data.gameState || null);
+      if (data.gameState === "WAITING_FRIEND") {
+        setShowPrivateModal(true);
+        setCreatedRoomCode(data.roomCode || null);
+      }
+      const currentPlayer = data.players?.find(
+        (player) => player.socketId === socket.id,
+      );
+      if (currentPlayer) setTeam(currentPlayer.team);
+    });
+
+    socket.on("teams_updated", (data) => {
+      setRoomPlayers(data.players || []);
+      setRoomLobbyStatus(data.gameState || null);
+      const currentPlayer = data.players?.find(
+        (player) => player.socketId === socket.id,
+      );
+      if (currentPlayer) setTeam(currentPlayer.team);
+    });
+
+    socket.on("room_player_left", (data) => {
+      setRoomPlayers(data.players || []);
+      setCurrentTurnId(data.nextTurnId);
+      setIsMyTurn(data.nextTurnId === socket.id);
+      setMessages((prev) => [
+        ...prev,
+        { sender: "Hệ thống", text: "Một người chơi đã rời trận." },
+      ]);
     });
 
     socket.on("join_private_error", (msg) => {
@@ -216,8 +300,12 @@ export default function App() {
     socket.on("start_coin_flip", (data) => {
       const { soundEnabled: sEnabled, sfxVolume: sVol } = soundRef.current;
       playSFX("coin-flip.mp3", sEnabled, sVol);
-      const first = data.firstTurnId === socket.id;
+      const first =
+        gameConfigRef.current.mode === "2v2"
+          ? data.firstTeam === gameConfigRef.current.team
+          : data.firstTurnId === socket.id;
       setCoinFlipResult(first ? "FIRST" : "SECOND");
+      setCurrentTurnId(data.firstTurnId);
       setIsMyTurn(first);
       setTurnTimeLeft(25);
     });
@@ -225,8 +313,8 @@ export default function App() {
     socket.on("shot_result", (data) => {
       setOpponentAimingIndex(null);
       const { soundEnabled: sEnabled, sfxVolume: sVol } = soundRef.current;
-      const isMeShooter = data.shooter === socket.id;
       const type = data.sunkShopId ? "SUNK" : data.isHit ? "HIT" : "MISS";
+      if (data.players) setRoomPlayers(data.players);
 
       if (data.isHit) {
         playSFX("sizzling-pan.mp3", sEnabled, sVol);
@@ -238,14 +326,22 @@ export default function App() {
       const randomText = textList[Math.floor(Math.random() * textList.length)];
 
       setRecentShot({ index: data.targetIndex, type, text: randomText });
+      setCurrentTurnId(data.nextTurnId);
 
-      if (isMeShooter) {
-        setOpponentHits((prev) => {
-          const next = [...prev];
-          next[data.targetIndex] = data.isHit ? "HIT" : "MISS";
-          return next;
+      const targetPlayer = data.players?.find(
+        (player) => player.socketId === data.targetSocketId,
+      );
+      if (targetPlayer?.team !== gameConfigRef.current.team) {
+        setOpponentHitsByPlayer((prev) => {
+          const nextBoard = [
+            ...(prev[data.targetSocketId] ||
+              Array(gameConfigRef.current.gridSize ** 2).fill(null)),
+          ];
+          nextBoard[data.targetIndex] = data.isHit ? "HIT" : "MISS";
+          return { ...prev, [data.targetSocketId]: nextBoard };
         });
-      } else {
+      }
+      if (data.targetSocketId === socket.id) {
         setMyBoard((prev) => {
           const next = [...prev];
           const currentCell = next[data.targetIndex];
@@ -259,7 +355,7 @@ export default function App() {
 
       setTimeout(() => {
         setRecentShot(null);
-        setIsMyTurn(data.nextTurn === socket.id);
+        setIsMyTurn(data.nextTurnId === socket.id);
         setTurnTimeLeft(25);
       }, 2000);
     });
@@ -268,9 +364,13 @@ export default function App() {
       setMessages((prev) => [...prev, data]);
     });
 
-    socket.on("opponent_aiming", (targetIndex) => {
+    socket.on("opponent_aiming", (data) => {
+      const targetIndex = data?.targetIndex;
       setOpponentAimingIndex(
-        Number.isInteger(targetIndex) && targetIndex >= 0 && targetIndex < 64
+        data?.targetSocketId === socket.id &&
+          Number.isInteger(targetIndex) &&
+          targetIndex >= 0 &&
+          targetIndex < gameConfigRef.current.gridSize ** 2
           ? targetIndex
           : null,
       );
@@ -278,9 +378,9 @@ export default function App() {
 
     socket.on("game_over", (data) => {
       const { soundEnabled: sEnabled, sfxVolume: sVol } = soundRef.current;
-      setWinner(data.winner);
+      setWinner(data.winnerTeam);
       setGameState("FINISHED");
-      if (data.winner === socket.id) {
+      if (data.winnerTeam === gameConfigRef.current.team) {
         playSFX("success jingle.mp3", sEnabled, sVol);
       }
     });
@@ -297,18 +397,23 @@ export default function App() {
 
     socket.on("rematch_accepted", (data) => {
       const newShops = data.shops;
+      const roomMode = data.mode === "2v2" ? "2v2" : "1v1";
+      setMode(roomMode);
+      setRoomPlayers(data.players || []);
       setActiveShops(newShops);
-      resetGameData(newShops);
+      resetGameData(newShops, data.gridSize || BOARD_SIZES[roomMode]);
       setGameState("SETUP");
       setMessages([{ sender: "Hệ thống", text: data.message }]);
       setCustomAlert((prev) => ({ ...prev, show: false })); // Tắt popup
     });
 
-    socket.on("opponent_left", () => {
+    socket.on("opponent_left", (message) => {
       // Đổi Alert thành Custom Toast bự
       showAlert(
         "Đối Thủ Rời Sảnh",
-        "Đối thủ đã rời đi hoặc ngắt kết nối.\nVui lòng quay về sảnh tìm đối thủ mới!",
+        typeof message === "string"
+          ? message
+          : "Đối thủ đã rời đi hoặc ngắt kết nối. Vui lòng quay về sảnh tìm đối thủ mới!",
         "error",
       );
       setGameState("LOBBY");
@@ -316,13 +421,22 @@ export default function App() {
       setSearching(false);
       setShowPrivateModal(false);
       setCreatedRoomCode(null);
+      setRoomPlayers([]);
+      setRoomHostSocketId(null);
+      setRoomLobbyStatus(null);
+      setSelectedTargetId(null);
       setMessages([]);
     });
 
     return () => {
       socket.off("match_found");
+      socket.off("connect");
+      socket.off("connect_error");
       socket.off("waiting_for_opponent");
       socket.off("private_room_created");
+      socket.off("room_lobby_update");
+      socket.off("teams_updated");
+      socket.off("room_player_left");
       socket.off("join_private_error");
       socket.off("board_rejected");
       socket.off("start_coin_flip");
@@ -338,11 +452,12 @@ export default function App() {
   }, []); // Vẫn giữ mảng rỗng để không bị reconnect vòng lặp
 
   // --- HANDLERS ---
-  const handleFindMatch = (name) => {
+  const handleFindMatch = (name, selectedMode) => {
     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
     setPlayerName(name);
+    setMode(selectedMode);
     setSearching(true);
-    socket.emit("tim_doi_thu", { name });
+    socket.emit("tim_doi_thu", { name, mode: selectedMode });
   };
 
   const handleCancelSearch = () => {
@@ -351,10 +466,25 @@ export default function App() {
     socket.emit("cancel_search");
   };
 
-  const handleCreatePrivateRoom = () => {
+  const handleCreatePrivateRoom = (selectedMode) => {
     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
     socket.emit("create_private_room", {
       name: currentUser?.displayName || playerName || "Phượt Thủ Hẻm",
+      mode: selectedMode,
+    });
+  };
+
+  const handleChangePrivateMode = (selectedMode) => {
+    socket.emit("set_private_mode", {
+      roomId: roomIdRef.current,
+      mode: selectedMode,
+    });
+  };
+
+  const handleSwapTeams = (targetSocketId) => {
+    socket.emit("swap_teams", {
+      roomId: roomIdRef.current,
+      targetSocketId,
     });
   };
 
@@ -369,6 +499,8 @@ export default function App() {
   const handleCancelPrivateRoom = () => {
     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
     setCreatedRoomCode(null);
+    setRoomLobbyStatus(null);
+    setRoomPlayers([]);
     setShowPrivateModal(false);
     socket.emit("cancel_search");
   };
@@ -386,19 +518,19 @@ export default function App() {
       (cell) => cell && cell.shopId === selectedShop,
     );
     if (placedIndex !== -1) {
-      let row = Math.floor(placedIndex / 8);
-      let col = placedIndex % 8;
+      let row = Math.floor(placedIndex / gridSize);
+      let col = placedIndex % gridSize;
       const size = currentShopObj.size;
       const isHorizontal = nextOrientation === "HORIZONTAL";
 
-      if (isHorizontal && col + size > 8) col = 8 - size;
-      if (!isHorizontal && row + size > 8) row = 8 - size;
+      if (isHorizontal && col + size > gridSize) col = gridSize - size;
+      if (!isHorizontal && row + size > gridSize) row = gridSize - size;
 
-      const adjustedIndex = row * 8 + col;
+      const adjustedIndex = row * gridSize + col;
       const newIndices = [];
       for (let i = 0; i < size; i++) {
         newIndices.push(
-          isHorizontal ? adjustedIndex + i : adjustedIndex + i * 8,
+          isHorizontal ? adjustedIndex + i : adjustedIndex + i * gridSize,
         );
       }
 
@@ -433,16 +565,18 @@ export default function App() {
     const size = currentShopObj.size;
     const isHorizontal = orientation === "HORIZONTAL";
 
-    let row = Math.floor(previewIndex / 8);
-    let col = previewIndex % 8;
+    let row = Math.floor(previewIndex / gridSize);
+    let col = previewIndex % gridSize;
 
-    if (isHorizontal && col + size > 8) col = 8 - size;
-    if (!isHorizontal && row + size > 8) row = 8 - size;
+    if (isHorizontal && col + size > gridSize) col = gridSize - size;
+    if (!isHorizontal && row + size > gridSize) row = gridSize - size;
 
-    const adjustedIndex = row * 8 + col;
+    const adjustedIndex = row * gridSize + col;
     const indices = [];
     for (let i = 0; i < size; i++) {
-      indices.push(isHorizontal ? adjustedIndex + i : adjustedIndex + i * 8);
+      indices.push(
+        isHorizontal ? adjustedIndex + i : adjustedIndex + i * gridSize,
+      );
     }
 
     const isOverlap = indices.some((idx) => {
@@ -476,7 +610,7 @@ export default function App() {
 
   const handleResetBoard = () => {
     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
-    setMyBoard(Array(64).fill(null));
+    setMyBoard(Array(gridSize * gridSize).fill(null));
     setPreviewIndex(null);
   };
 
@@ -505,13 +639,22 @@ export default function App() {
   const handleFireShot = (targetIndex) => {
     if (!isMyTurn || gameState !== "PLAYING" || recentShot !== null) return;
     if (opponentHits[targetIndex] !== null) return;
+    if (!targetSocketId) return;
 
     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.5);
-    socket.emit("fire_shot", { roomId: roomIdRef.current, targetIndex });
+    socket.emit("fire_shot", {
+      roomId: roomIdRef.current,
+      targetSocketId,
+      targetIndex,
+    });
   };
   const handleAimShot = (targetIndex) => {
-    if (!isMyTurn || gameState !== "PLAYING") return;
-    socket.emit("aim_shot", { roomId: roomIdRef.current, targetIndex });
+    if (!isMyTurn || gameState !== "PLAYING" || !targetSocketId) return;
+    socket.emit("aim_shot", {
+      roomId: roomIdRef.current,
+      targetSocketId,
+      targetIndex,
+    });
   };
 
   const handleSendChat = (text) => {
@@ -534,6 +677,9 @@ export default function App() {
     setGameState("LOBBY");
     setRoomId(null);
     setSearching(false);
+    setRoomPlayers([]);
+    setRoomLobbyStatus(null);
+    setCreatedRoomCode(null);
     setMessages([]);
   };
 
@@ -557,6 +703,7 @@ export default function App() {
           <>
             <LobbyScreen
               onFindMatch={handleFindMatch}
+              connectionError={connectionError}
               onOpenSettings={() => {
                 playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
                 setShowSettings(true);
@@ -599,7 +746,30 @@ export default function App() {
                 setShowSettings(true);
               }}
             />
+            {connectionError && (
+              <p
+                role="status"
+                className="w-full border-b border-rose-500/30 bg-rose-950/80 px-3 py-1 text-center text-[10px] font-bold text-rose-200"
+              >
+                {connectionError}
+              </p>
+            )}
             <main className="flex-1 bg-slate-950 p-3 flex flex-col justify-between items-center relative overflow-visible">
+              {(gameState === "SETUP" || mode === "2v2") && (
+                <RoomRoster
+                  players={roomPlayers}
+                  currentSocketId={socket.id}
+                  hostSocketId={roomHostSocketId}
+                  turnId={currentTurnId}
+                  mode={mode}
+                  canSwap={
+                    (gameState === "SETUP" ||
+                      roomLobbyStatus === "WAITING_FRIEND") &&
+                    !roomPlayers.some((player) => player.ready)
+                  }
+                  onSwapTeams={handleSwapTeams}
+                />
+              )}
               {gameState === "PLAYING" && (
                 <div className="w-full max-w-90 bg-slate-900/90 border border-slate-800 rounded-2xl p-2.5 flex justify-between items-center shadow-xl my-auto animate-fade-in">
                   <div className="flex flex-col gap-1">
@@ -654,6 +824,21 @@ export default function App() {
                   </div>
                 </div>
               )}
+              {gameState === "PLAYING" && mode === "2v2" && isMyTurn && (
+                <div className="flex w-full max-w-90 gap-1.5 overflow-x-auto py-1">
+                  {opposingPlayers.map((player) => (
+                    <button
+                      key={player.socketId}
+                      type="button"
+                      aria-pressed={targetSocketId === player.socketId}
+                      onClick={() => setSelectedTargetId(player.socketId)}
+                      className={`min-w-0 flex-1 truncate rounded-lg border px-2 py-2 text-[10px] font-black ${targetSocketId === player.socketId ? "border-amber-300 bg-amber-400 text-slate-950" : "border-slate-700 bg-slate-900 text-slate-300"}`}
+                    >
+                      🎯 {player.name}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="my-auto w-full flex justify-center">
                 <GameBoard
                   gameState={gameState}
@@ -671,6 +856,7 @@ export default function App() {
                   recentShot={showTaunt ? recentShot : null}
                   soundEnabled={soundEnabled}
                   shops={activeShops}
+                  boardSize={gridSize}
                 />
               </div>
             </main>
@@ -695,6 +881,7 @@ export default function App() {
             {coinFlipResult && (
               <CoinFlipOverlay
                 result={coinFlipResult}
+                isTeamMode={mode === "2v2"}
                 onComplete={() => {
                   setCoinFlipResult(null);
                   setGameState("PLAYING");
@@ -703,7 +890,7 @@ export default function App() {
             )}
             {gameState === "FINISHED" && (
               <ResultScreen
-                isWinner={winner === socket.id}
+                isWinner={winner === team}
                 onRematch={handleRematch}
                 onLeave={handleLeaveRoom}
               />
@@ -747,13 +934,33 @@ export default function App() {
         <PrivateRoomModal
           isOpen={showPrivateModal}
           onClose={() => {
-            setShowPrivateModal(false);
-            setCreatedRoomCode(null);
+            if (roomLobbyStatus === "WAITING_FRIEND") {
+              handleCancelPrivateRoom();
+            } else {
+              setShowPrivateModal(false);
+              setCreatedRoomCode(null);
+            }
           }}
           onCreateRoom={handleCreatePrivateRoom}
           onJoinRoom={handleJoinPrivateRoom}
-          roomCodeCreated={createdRoomCode}
           onCancelWaiting={handleCancelPrivateRoom}
+          roomLobby={
+            roomLobbyStatus
+              ? {
+                  roomId,
+                  roomCode: createdRoomCode,
+                  hostSocketId: roomHostSocketId,
+                  mode,
+                  gridSize,
+                  playerCount: mode === "2v2" ? 4 : 2,
+                  gameState: roomLobbyStatus,
+                  players: roomPlayers,
+                }
+              : null
+          }
+          currentSocketId={socket.id}
+          onChangeMode={handleChangePrivateMode}
+          onSwapTeams={handleSwapTeams}
         />
 
         {/* HỆ THỐNG CUSTOM TOAST (THÔNG BÁO) GHI ĐÈ LÊN MỌI THỨ */}

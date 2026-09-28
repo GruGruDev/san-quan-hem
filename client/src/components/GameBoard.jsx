@@ -17,6 +17,7 @@ export default function GameBoard({
   recentShot,
   soundEnabled = true,
   shops = DEFAULT_SHOPS,
+  boardSize = 8,
   opponentAimingIndex, // Nhận từ App.jsx
   onAimShot, // Nhận từ App.jsx
 }) {
@@ -28,18 +29,27 @@ export default function GameBoard({
   const currentShopObj = shops.find((s) => s.id === selectedShop) || shops[0];
 
   const getOccupiedIndices = (startIndex, size, isHorizontal) => {
-    if (startIndex === null || startIndex < 0 || startIndex >= 64) return null;
-    let row = Math.floor(startIndex / 8);
-    let col = startIndex % 8;
+    if (
+      startIndex === null ||
+      startIndex < 0 ||
+      startIndex >= boardSize * boardSize ||
+      size > boardSize
+    ) {
+      return null;
+    }
+    let row = Math.floor(startIndex / boardSize);
+    let col = startIndex % boardSize;
 
-    if (isHorizontal && col + size > 8) col = 8 - size;
-    if (!isHorizontal && row + size > 8) row = 8 - size;
+    if (isHorizontal && col + size > boardSize) col = boardSize - size;
+    if (!isHorizontal && row + size > boardSize) row = boardSize - size;
 
-    const adjustedIndex = row * 8 + col;
+    const adjustedIndex = row * boardSize + col;
     const indices = [];
 
     for (let i = 0; i < size; i++) {
-      indices.push(isHorizontal ? adjustedIndex + i : adjustedIndex + i * 8);
+      indices.push(
+        isHorizontal ? adjustedIndex + i : adjustedIndex + i * boardSize,
+      );
     }
     return indices;
   };
@@ -113,7 +123,13 @@ export default function GameBoard({
         className="absolute inset-0 w-full h-full object-fill rounded-xl pointer-events-none"
       />
 
-      <div className="absolute inset-0 grid grid-cols-8 grid-rows-8 gap-px w-full h-full p-[8.5%]">
+      <div
+        className="absolute inset-0 grid gap-px w-full h-full p-[8.5%]"
+        style={{
+          gridTemplateColumns: `repeat(${boardSize}, minmax(0, 1fr))`,
+          gridTemplateRows: `repeat(${boardSize}, minmax(0, 1fr))`,
+        }}
+      >
         {/* LƯỚI NHÀ BẠN */}
         {(isSetup || (isPlaying && !isMyTurn)) &&
           myBoard.map((cell, index) => {

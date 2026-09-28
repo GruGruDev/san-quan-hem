@@ -1,4 +1,4 @@
-export const APP_VERSION = "v1.2";
+export const APP_VERSION = "v1.3";
 
 // 5 loại quán ăn trong hẻm
 export const ALL_SHOPS = [
@@ -11,6 +11,13 @@ export const ALL_SHOPS = [
 
 // Mặc định 3 quán chuẩn nếu không nhận được dữ liệu xoay từ Server
 export const SHOPS = ALL_SHOPS.slice(0, 3);
+export const TWO_VS_TWO_SHOPS = [
+  ALL_SHOPS[0],
+  ALL_SHOPS[1],
+  ALL_SHOPS[3],
+  ALL_SHOPS[4],
+];
+export const BOARD_SIZES = { "1v1": 8, "2v2": 10 };
 
 export const SHOP_OUTLINE = {
   cavien: "outline-amber-400",
@@ -18,6 +25,7 @@ export const SHOP_OUTLINE = {
   bunrieu: "outline-orange-400",
   quanoc: "outline-emerald-400",
   quannhau: "outline-red-400",
+  quannhau5: "outline-red-400",
 };
 
 // Kho câu thoại floating text chọc quêGen Z siêu đa dạng

@@ -1,19 +1,33 @@
 import { SHOPS } from "../constants/game";
 
-export const getOccupiedIndices = (startIndex, size, horizontal) => {
-  if (startIndex === null || startIndex < 0 || startIndex >= 64) return null;
+export const getOccupiedIndices = (
+  startIndex,
+  size,
+  horizontal,
+  boardSize = 8,
+) => {
+  if (
+    startIndex === null ||
+    startIndex < 0 ||
+    startIndex >= boardSize * boardSize ||
+    size > boardSize
+  ) {
+    return null;
+  }
 
-  let row = Math.floor(startIndex / 8);
-  let col = startIndex % 8;
+  let row = Math.floor(startIndex / boardSize);
+  let col = startIndex % boardSize;
 
-  if (horizontal && col + size > 8) col = 8 - size;
-  if (!horizontal && row + size > 8) row = 8 - size;
+  if (horizontal && col + size > boardSize) col = boardSize - size;
+  if (!horizontal && row + size > boardSize) row = boardSize - size;
 
-  const adjustedIndex = row * 8 + col;
+  const adjustedIndex = row * boardSize + col;
   const indices = [];
 
   for (let i = 0; i < size; i++) {
-    indices.push(horizontal ? adjustedIndex + i : adjustedIndex + i * 8);
+    indices.push(
+      horizontal ? adjustedIndex + i : adjustedIndex + i * boardSize,
+    );
   }
   return indices;
 };

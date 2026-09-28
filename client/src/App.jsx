@@ -19,6 +19,7 @@ import SearchingScreen from "./components/SearchingScreen";
 
 // Import Modals
 import AuthModal from "./components/Modals/AuthModal";
+import DonateModal from "./components/Modals/DonateModal";
 import GuideModal from "./components/Modals/GuideModal";
 import LeaderboardModal from "./components/Modals/LeaderboardModal";
 import SettingsModal from "./components/Modals/SettingsModal";

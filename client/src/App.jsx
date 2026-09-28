@@ -185,7 +185,8 @@ export default function App() {
     socket.connect();
 
     socket.on("match_found", (data) => {
-      const roomShops = data.shops || SHOPS;
+      // Sắp xếp thứ tự từ nhỏ đến lớn (2 ô -> 3 ô -> 4 ô)
+      const roomShops = (data.shops || SHOPS).sort((a, b) => a.size - b.size);
       setActiveShops(roomShops);
       resetGameData(roomShops);
 
@@ -438,6 +439,9 @@ export default function App() {
         };
       });
       setMyBoard(newBoard);
+
+      // 💥 FIX LỖI PREVIEW MỜ: Reset preview về null ngay sau khi đặt thành công
+      setPreviewIndex(null);
 
       const placedShopIds = new Set(
         newBoard.filter(Boolean).map((c) => c.shopId),

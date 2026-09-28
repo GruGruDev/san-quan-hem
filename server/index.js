@@ -181,9 +181,19 @@ const selectRandomShops = () => {
     { id: "trasua", name: "Tiệm Trà Sữa", size: 3, icon: "/trasua.png" },
     { id: "bunrieu", name: "Gánh Bún Riêu", size: 3, icon: "/bunrieu.png" },
     { id: "quanoc", name: "Quán Ốc Quen", size: 4, icon: "/donuong.png" },
-    { id: "quannhau", name: "Khu Nhậu Vỉa Hè", size: 5, icon: "/quannhau.png" },
+    {
+      id: "quannhau",
+      name: "Quán Nhậu Vỉa Hè",
+      size: 4,
+      icon: "/quannhau.png",
+    },
   ];
-  return pool.sort(() => 0.5 - Math.random()).slice(0, 3);
+
+  // Trộn ngẫu nhiên và lấy 3 quán
+  const picked = pool.sort(() => 0.5 - Math.random()).slice(0, 3);
+
+  // Sắp xếp thứ tự bắt buộc từ nhỏ đến lớn: 2 ô -> 3 ô -> 4 ô
+  return picked.sort((a, b) => a.size - b.size);
 };
 
 // HÀM 2: Bot đặt quán dựa trên 3 quán đã chọn

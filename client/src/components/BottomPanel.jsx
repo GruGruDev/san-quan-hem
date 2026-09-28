@@ -137,7 +137,7 @@ export default function BottomPanel({
                 key={idx}
                 className={
                   msg.sender === "Hệ thống"
-                    ? "text-slate-400 italic font-medium leading-relaxed"
+                    ? "text-amber-400/90 italic font-medium leading-relaxed"
                     : "text-slate-200 leading-relaxed"
                 }
               >

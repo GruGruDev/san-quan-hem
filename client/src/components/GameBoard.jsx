@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { SHOPS, SHOP_OUTLINE } from "../constants/game";
+// Import mặc định phòng khi chưa nhận được props shops
+import { SHOPS as DEFAULT_SHOPS, SHOP_OUTLINE } from "../constants/game";
 import { playSFX } from "../utils/sound";
 
 export default function GameBoard({
@@ -15,6 +16,7 @@ export default function GameBoard({
   onFireShot,
   recentShot,
   soundEnabled = true,
+  shops = DEFAULT_SHOPS, // NHẬN DANH SÁCH 3 QUÁN NGẪU NHIÊN TỪ APP TRUYỀN XUỐNG
 }) {
   const isSetup = gameState === "SETUP";
   const isPlaying = gameState === "PLAYING";
@@ -23,7 +25,8 @@ export default function GameBoard({
   // State lưu ô đang được gim kính ngắm vitri.png trước khi bắn
   const [aimingIndex, setAimingIndex] = useState(null);
 
-  const currentShopObj = SHOPS.find((s) => s.id === selectedShop) || SHOPS[0];
+  // 🚨 DÙNG BIẾN `shops` thay vì `SHOPS` mặc định
+  const currentShopObj = shops.find((s) => s.id === selectedShop) || shops[0];
 
   // Phát âm thanh khi có kết quả phát bắn vừa rồi (HIT / MISS)
   useEffect(() => {

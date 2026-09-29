@@ -105,8 +105,13 @@ export default function App() {
     Array(BOARD_SIZES["1v1"] ** 2).fill(null),
   );
   const [opponentHitsByPlayer, setOpponentHitsByPlayer] = useState({});
+  const [opponentSunkShopsByPlayer, setOpponentSunkShopsByPlayer] = useState(
+    {},
+  );
 
   const [isMyTurn, setIsMyTurn] = useState(false);
+  const [shotPending, setShotPending] = useState(false);
+  const shotPendingRef = useRef(false);
   const [currentTurnId, setCurrentTurnId] = useState(null);
   const [coinFlipResult, setCoinFlipResult] = useState(null);
   const [recentShot, setRecentShot] = useState(null);
@@ -193,10 +198,13 @@ export default function App() {
     setGridSize(newGridSize);
     setMyBoard(Array(newGridSize * newGridSize).fill(null));
     setOpponentHitsByPlayer({});
+    setOpponentSunkShopsByPlayer({});
     setSelectedShop(newShops[0]?.id || "cavien");
     setOrientation("HORIZONTAL");
     setPreviewIndex(null);
     setIsMyTurn(false);
+    shotPendingRef.current = false;
+    setShotPending(false);
     setCurrentTurnId(null);
     setCoinFlipResult(null);
     setRecentShot(null);
@@ -340,6 +348,15 @@ export default function App() {
           nextBoard[data.targetIndex] = data.isHit ? "HIT" : "MISS";
           return { ...prev, [data.targetSocketId]: nextBoard };
         });
+        if (data.sunkShopId) {
+          setOpponentSunkShopsByPlayer((prev) => ({
+            ...prev,
+            [data.targetSocketId]: [
+              ...(prev[data.targetSocketId] || []),
+              data.sunkShopId,
+            ],
+          }));
+        }
       }
       if (data.targetSocketId === socket.id) {
         setMyBoard((prev) => {
@@ -355,9 +372,13 @@ export default function App() {
 
       setTimeout(() => {
         setRecentShot(null);
+        if (data.shooterId === socket.id) {
+          shotPendingRef.current = false;
+          setShotPending(false);
+        }
         setIsMyTurn(data.nextTurnId === socket.id);
         setTurnTimeLeft(25);
-      }, 2000);
+      }, 1500);
     });
 
     socket.on("receive_chat", (data) => {
@@ -378,6 +399,8 @@ export default function App() {
 
     socket.on("game_over", (data) => {
       const { soundEnabled: sEnabled, sfxVolume: sVol } = soundRef.current;
+      shotPendingRef.current = false;
+      setShotPending(false);
       setWinner(data.winnerTeam);
       setGameState("FINISHED");
       if (data.winnerTeam === gameConfigRef.current.team) {
@@ -484,7 +507,9 @@ export default function App() {
   const handleSwapTeams = (targetSocketId) => {
     socket.emit("swap_teams", {
       roomId: roomIdRef.current,
-      targetSocketId,
+      ...(targetSocketId === "red" || targetSocketId === "blue"
+        ? { targetTeam: targetSocketId }
+        : { targetSocketId }),
     });
   };
 
@@ -637,10 +662,19 @@ export default function App() {
   };
 
   const handleFireShot = (targetIndex) => {
-    if (!isMyTurn || gameState !== "PLAYING" || recentShot !== null) return;
+    if (
+      !isMyTurn ||
+      gameState !== "PLAYING" ||
+      recentShot !== null ||
+      shotPendingRef.current
+    ) {
+      return;
+    }
     if (opponentHits[targetIndex] !== null) return;
     if (!targetSocketId) return;
 
+    shotPendingRef.current = true;
+    setShotPending(true);
     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.5);
     socket.emit("fire_shot", {
       roomId: roomIdRef.current,
@@ -649,7 +683,14 @@ export default function App() {
     });
   };
   const handleAimShot = (targetIndex) => {
-    if (!isMyTurn || gameState !== "PLAYING" || !targetSocketId) return;
+    if (
+      !isMyTurn ||
+      gameState !== "PLAYING" ||
+      !targetSocketId ||
+      shotPendingRef.current
+    ) {
+      return;
+    }
     socket.emit("aim_shot", {
       roomId: roomIdRef.current,
       targetSocketId,
@@ -815,9 +856,24 @@ export default function App() {
                       {activeShops.map((s) => (
                         <div
                           key={`opp-hud-${s.id}`}
-                          className="w-9 h-9 rounded-xl p-0.5 border bg-slate-800/80 border-slate-700/80 flex items-center justify-center text-xs font-bold text-slate-400 shadow"
+                          className={`relative w-9 h-9 rounded-xl p-0.5 border flex items-center justify-center text-xs font-bold text-slate-400 shadow ${opponentSunkShopsByPlayer[targetSocketId]?.includes(s.id) ? "bg-red-950/70 border-red-700 opacity-50 grayscale" : "bg-slate-800/80 border-slate-700/80"}`}
                         >
-                          ❓
+                          {opponentSunkShopsByPlayer[targetSocketId]?.includes(
+                            s.id,
+                          ) ? (
+                            <>
+                              <img
+                                src={s.icon}
+                                className="h-full w-full object-contain"
+                                alt={s.name}
+                              />
+                              <span className="absolute inset-0 flex items-center justify-center text-xs font-black text-red-500">
+                                ✖
+                              </span>
+                            </>
+                          ) : (
+                            "❓"
+                          )}
                         </div>
                       ))}
                     </div>
@@ -850,6 +906,7 @@ export default function App() {
                   previewIndex={previewIndex}
                   setPreviewIndex={setPreviewIndex}
                   isMyTurn={isMyTurn}
+                  shotPending={shotPending}
                   onFireShot={handleFireShot}
                   opponentAimingIndex={opponentAimingIndex}
                   onAimShot={handleAimShot}

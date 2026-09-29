@@ -814,7 +814,7 @@ const startRoomIfReady = (room) => {
 
   room.gameState = "PLAYING";
   room.turnOrder = getTurnOrder(room);
-  room.turnIndex = Math.floor(Math.random() * room.turnOrder.length);
+  room.turnIndex = 0;
   room.turn = room.turnOrder[room.turnIndex];
   io.to(room.roomId).emit("start_coin_flip", {
     firstTurnId: room.turn,
@@ -879,7 +879,10 @@ const applyShot = async (room, shooterId, targetId, targetIndex) => {
 
   target.eliminated = isBoardDestroyed(targetBoard);
   const winnerTeam = getWinningTeam(room);
-  const nextTurnId = winnerTeam ? null : getNextTurnId(room, shooterId, isHit);
+  const keepTurn = room.mode === "1v1" && isHit;
+  const nextTurnId = winnerTeam
+    ? null
+    : getNextTurnId(room, shooterId, keepTurn);
   room.turn = nextTurnId;
 
   io.to(room.roomId).emit("shot_result", {
@@ -1324,18 +1327,34 @@ io.on("connection", (socket) => {
     if (
       !room ||
       !player ||
-      !target ||
-      player === target ||
-      player.team === target.team ||
       player.isBot ||
-      target.isBot ||
       !["WAITING_FRIEND", "SETUP"].includes(room.gameState) ||
       Object.values(room.players).some((entry) => entry.ready)
     ) {
       return;
     }
 
-    [player.team, target.team] = [target.team, player.team];
+    if (target) {
+      if (player === target || player.team === target.team || target.isBot) {
+        return;
+      }
+      [player.team, target.team] = [target.team, player.team];
+    } else {
+      const targetTeam = data.targetTeam;
+      const teamCapacity = room.playerCount / 2;
+      const targetTeamCount = Object.values(room.players).filter(
+        (entry) => entry.team === targetTeam,
+      ).length;
+      if (
+        !["red", "blue"].includes(targetTeam) ||
+        targetTeam === player.team ||
+        targetTeamCount >= teamCapacity
+      ) {
+        return;
+      }
+      player.team = targetTeam;
+    }
+
     io.to(room.roomId).emit("teams_updated", {
       players: publicRoomPlayers(room),
       gameState: room.gameState,

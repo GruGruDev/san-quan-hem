@@ -42,12 +42,17 @@ export default function RoomRoster({
                   const player = members[index];
                   if (!player) {
                     return (
-                      <div
+                      <button
                         key={`empty-${team.id}-${index}`}
-                        className="flex h-7 items-center rounded-md border border-dashed border-slate-700 px-2 text-[9px] text-slate-600"
+                        type="button"
+                        onClick={() => onSwapTeams?.(team.id)}
+                        disabled={!canSwap || team.id === currentTeam}
+                        className={`flex h-7 items-center rounded-md border border-dashed px-2 text-[9px] ${canSwap && team.id !== currentTeam ? "cursor-pointer border-amber-500/50 text-amber-300 hover:bg-amber-500/10" : "border-slate-700 text-slate-600"}`}
                       >
-                        Chờ người chơi
-                      </div>
+                        {canSwap && team.id !== currentTeam
+                          ? "Chạm để chuyển vào đây"
+                          : "Chờ người chơi"}
+                      </button>
                     );
                   }
 

@@ -215,6 +215,7 @@ test(
     );
 
     const teamStart = await setUpMatch(teamPlayers, teamMatch);
+    assert.equal(teamStart.firstTurnId, teamStart.turnOrder[0]);
     const teamShooter = teamPlayers.find(
       (player) => player.id === teamStart.firstTurnId,
     );
@@ -231,7 +232,11 @@ test(
     });
     const teamHit = await teamShotEvents[0];
     assert.equal(teamHit.isHit, true);
-    assert.equal(teamHit.nextTurnId, teamShooter.id);
+    assert.equal(
+      teamHit.nextTurnId,
+      teamStart.turnOrder[1],
+      "2v2 advances to the next alternating player even after a hit",
+    );
 
     const roomHost = await connectPlayer("room-host");
     const roomCodeEvent = waitForEvent(roomHost, "private_room_created");
@@ -249,6 +254,18 @@ test(
     const privateMode = await modeChanged;
     assert.equal(privateMode.playerCount, 4);
     assert.equal(privateMode.gridSize, 10);
+
+    const movedToBlue = waitForEvent(roomHost, "teams_updated");
+    roomHost.emit("swap_teams", {
+      roomId: roomCreated.roomId,
+      targetTeam: "blue",
+    });
+    const blueTeamUpdate = await movedToBlue;
+    assert.equal(
+      blueTeamUpdate.players.find((player) => player.socketId === roomHost.id)
+        .team,
+      "blue",
+    );
 
     const guests = await Promise.all([
       connectPlayer("guest-one"),

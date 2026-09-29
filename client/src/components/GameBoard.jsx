@@ -13,6 +13,7 @@ export default function GameBoard({
   previewIndex,
   setPreviewIndex,
   isMyTurn,
+  shotPending = false,
   onFireShot,
   recentShot,
   soundEnabled = true,
@@ -91,7 +92,9 @@ export default function GameBoard({
   };
 
   const handleOpponentCellClick = (index, status) => {
-    if (!isMyTurn || status !== null || aimingIndex !== null) return;
+    if (!isMyTurn || shotPending || status !== null || aimingIndex !== null) {
+      return;
+    }
     playSFX("pop.mp3", soundEnabled, 0.5);
     setAimingIndex(index);
 
@@ -219,9 +222,12 @@ export default function GameBoard({
               <button
                 key={`opp-${index}`}
                 onClick={() => handleOpponentCellClick(index, status)}
+                disabled={
+                  shotPending || aimingIndex !== null || status !== null
+                }
                 className={`
                   w-full h-full flex items-center justify-center relative border border-white/10 rounded-sm transition-all group overflow-visible
-                  ${status === null ? "hover:bg-yellow-400/20 active:bg-yellow-400/30 cursor-pointer active:scale-90" : ""}
+                  ${status === null && !shotPending && aimingIndex === null ? "hover:bg-yellow-400/20 active:bg-yellow-400/30 cursor-pointer active:scale-90" : ""}
                 `}
               >
                 {(status === null || isAiming) && (

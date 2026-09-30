@@ -812,8 +812,14 @@ export default function App() {
     return <LoadingScreen onFinish={() => setAppLoading(false)} />;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-2 select-none font-sans relative">
-      <div className="w-full max-w-md bg-slate-900 rounded-3xl shadow-2xl overflow-hidden border-4 border-slate-800 flex flex-col h-212.5 max-h-screen relative">
+    <div className="min-h-dvh w-full bg-slate-950 text-white flex flex-col items-center justify-center p-2 select-none font-sans relative">
+      <div
+        className={`relative flex min-h-0 flex-col overflow-hidden rounded-3xl shadow-2xl border-4 ${gameState === "LOBBY" ? "border-amber-900/60" : "border-slate-800"}`}
+        style={{
+          width: "min(100%, 28rem)",
+          height: "min(53.125rem, max(calc(100dvh - 1rem), 42rem))",
+        }}
+      >
         {gameState === "LOBBY" ? (
           <>
             <LobbyScreen
@@ -869,7 +875,7 @@ export default function App() {
                 {connectionError}
               </p>
             )}
-            <main className="flex-1 bg-slate-950 p-3 flex flex-col justify-between items-center relative overflow-visible">
+            <main className="flex-1 min-h-0 bg-slate-950 p-2 sm:p-3 flex flex-col justify-between items-center relative overflow-hidden">
               {(gameState === "SETUP" || mode === "2v2") && (
                 <RoomRoster
                   players={roomPlayers}
@@ -969,7 +975,7 @@ export default function App() {
                   ))}
                 </div>
               )}
-              <div className="my-auto w-full flex justify-center">
+              <div className="my-auto flex min-h-0 w-full justify-center">
                 <GameBoard
                   gameState={gameState}
                   myBoard={myBoard}

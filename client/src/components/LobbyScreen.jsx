@@ -27,9 +27,8 @@ export default function LobbyScreen({
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-2 select-none font-sans">
-      {/* Khung Mô Phỏng Màn Hình Mobile */}
-      <div className="w-full max-w-md rounded-3xl shadow-2xl overflow-hidden border-4 border-amber-900/60 flex flex-col h-212.5 max-h-screen relative">
+    <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-slate-950 select-none font-sans">
+      <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden">
         {/* HÌNH NỀN BG COZY VIỆT NAM (/bg.png) */}
         <div
           className="absolute inset-0 w-full h-full bg-cover bg-center transition-all duration-700"

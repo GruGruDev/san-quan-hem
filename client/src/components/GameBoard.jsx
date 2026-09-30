@@ -24,7 +24,6 @@ export default function GameBoard({
 }) {
   const isSetup = gameState === "SETUP";
   const isPlaying = gameState === "PLAYING";
-  const [isDragging, setIsDragging] = useState(false);
   const [aimingIndex, setAimingIndex] = useState(null);
 
   const currentShopObj = shops.find((s) => s.id === selectedShop) || shops[0];
@@ -73,22 +72,10 @@ export default function GameBoard({
       : null;
   const isPreviewValid = checkPlacementValid(previewIndices);
 
-  const handlePointerDown = (index) => {
+  const handleSetupCellClick = (index) => {
     if (!isSetup) return;
-    setIsDragging(true);
     setPreviewIndex(index);
     playSFX("pop.mp3", soundEnabled, 0.4);
-  };
-
-  const handlePointerEnter = (index) => {
-    if (!isSetup) return;
-    if (isDragging || previewIndex !== null) {
-      setPreviewIndex(index);
-    }
-  };
-
-  const handlePointerUp = () => {
-    setIsDragging(false);
   };
 
   const handleOpponentCellClick = (index, status) => {
@@ -114,11 +101,12 @@ export default function GameBoard({
   return (
     <div
       // RUNG TOÀN BÀN CỜ
-      className={`relative w-full aspect-square max-w-90 bg-slate-900 rounded-2xl p-1 shadow-2xl border-2 border-slate-700 select-none touch-none overflow-visible transition-transform ${
+      className={`relative aspect-square max-h-full max-w-full bg-slate-900 rounded-2xl p-1 shadow-2xl border-2 border-slate-700 select-none touch-manipulation overflow-visible transition-transform ${
         isSunkExplosion ? "animate-shake" : ""
       }`}
-      onPointerUp={handlePointerUp}
-      onPointerLeave={handlePointerUp}
+      style={{
+        width: "min(100%, 22.5rem, max(12rem, calc(100dvh - 20rem)))",
+      }}
     >
       <img
         src="/bg8x8.png"
@@ -142,8 +130,7 @@ export default function GameBoard({
             return (
               <button
                 key={`my-${index}`}
-                onPointerDown={() => handlePointerDown(index)}
-                onPointerEnter={() => handlePointerEnter(index)}
+                onClick={() => handleSetupCellClick(index)}
                 className={`
                   w-full h-full flex items-center justify-center relative border border-white/10 rounded-sm transition-all overflow-visible cursor-pointer
                   ${isPreview && isPreviewValid ? "bg-emerald-500/50 border-2 border-emerald-300" : ""}

@@ -34,6 +34,9 @@ const mailTransport =
         host: process.env.SMTP_HOST,
         port: SMTP_PORT,
         secure: process.env.SMTP_SECURE === "true" || SMTP_PORT === 465,
+        connectionTimeout: 10_000,
+        greetingTimeout: 10_000,
+        socketTimeout: 10_000,
         auth: {
           user: process.env.SMTP_USER,
           pass: process.env.SMTP_PASS,

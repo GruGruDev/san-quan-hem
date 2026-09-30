@@ -41,6 +41,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username }),
+        signal: AbortSignal.timeout(30_000),
       });
       const data = await res.json();
       if (!res.ok)
@@ -48,7 +49,11 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
       setMode("RESET_CONFIRM");
       setNotice(data.message);
     } catch (err) {
-      setError(err.message);
+      setError(
+        err.name === "TimeoutError"
+          ? "Máy chủ phản hồi quá lâu. Vui lòng thử lại sau."
+          : err.message,
+      );
     } finally {
       setSubmitting(false);
     }
@@ -83,6 +88,9 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        ...(mode === "RESET_CONFIRM" && {
+          signal: AbortSignal.timeout(30_000),
+        }),
       });
 
       const data = await res.json();
@@ -104,7 +112,11 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
       onAuthSuccess(data.user);
       onClose();
     } catch (err) {
-      setError(err.message);
+      setError(
+        err.name === "TimeoutError"
+          ? "Máy chủ phản hồi quá lâu. Vui lòng thử lại sau."
+          : err.message,
+      );
     } finally {
       setSubmitting(false);
     }

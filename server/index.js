@@ -11,6 +11,7 @@ const cors = require("cors");
 const { rateLimit } = require("express-rate-limit");
 const nodemailer = require("nodemailer");
 const User = require("./models/User");
+const OAuthFlow = require("./models/OAuthFlow");
 
 // --- BÍ MẬT LẤY TỪ BIẾN MÔI TRƯỜNG (.env / Render Dashboard) ---
 const { MONGO_URI, JWT_SECRET } = process.env;
@@ -192,13 +193,391 @@ const passwordResetVerifyLimiter = rateLimit({
   message: { message: "Quá nhiều lần nhập mã. Vui lòng thử lại sau." },
 });
 
+const passwordChangeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { message: "Quá nhiều lần đổi mật khẩu. Vui lòng thử lại sau." },
+});
+
+const requireAuthenticatedUser = async (req, res, next) => {
+  const authorization = req.get("authorization") || "";
+  const [scheme, token] = authorization.split(/\s+/, 2);
+  if (scheme?.toLowerCase() !== "bearer" || !token) {
+    return res.status(401).json({ message: "Vui lòng đăng nhập lại." });
+  }
+
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    if (typeof payload.userId !== "string") {
+      return res.status(401).json({ message: "Phiên đăng nhập không hợp lệ." });
+    }
+
+    const user = await User.findById(payload.userId);
+    if (!user || (payload.tokenVersion || 0) !== (user.tokenVersion || 0)) {
+      return res.status(401).json({ message: "Vui lòng đăng nhập lại." });
+    }
+
+    req.authenticatedUser = user;
+    return next();
+  } catch {
+    return res.status(401).json({ message: "Phiên đăng nhập không hợp lệ." });
+  }
+};
+
 // --- KẾT NỐI MONGODB ATLAS CLOUD ---
 mongoose
   .connect(MONGO_URI)
   .then(() => console.log("✅ Đã kết nối MongoDB Atlas Cloud thành công!"))
   .catch((err) => console.error("❌ Lỗi kết nối MongoDB Atlas:", err.message));
 
+const OAUTH_PROVIDERS = new Set(["google", "facebook"]);
+const getOAuthCredentials = (provider) =>
+  provider === "google"
+    ? {
+        clientId: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      }
+    : {
+        clientId: process.env.FACEBOOK_APP_ID,
+        clientSecret: process.env.FACEBOOK_APP_SECRET,
+      };
+const getOAuthCallbackUrl = (provider, req) => {
+  const serverUrl = (
+    process.env.PUBLIC_SERVER_URL ||
+    process.env.RENDER_EXTERNAL_URL ||
+    `${req.protocol}://${req.get("host")}`
+  ).replace(/\/+$/, "");
+  return `${serverUrl}/api/auth/${provider}/callback`;
+};
+const redirectToClient = (res, query) => {
+  const target = new URL(
+    process.env.CLIENT_URL || "https://san-quan-hem.vercel.app",
+  );
+  Object.entries(query).forEach(([key, value]) =>
+    target.searchParams.set(key, value),
+  );
+  return res.redirect(target.toString());
+};
+const hashOAuthValue = (value) =>
+  crypto.createHash("sha256").update(value).digest("hex");
+
+const createOAuthAuthorizationUrl = async (provider, purpose, req, user) => {
+  const credentials = getOAuthCredentials(provider);
+  if (!credentials.clientId || !credentials.clientSecret) {
+    throw Object.assign(new Error("OAuth provider is not configured."), {
+      code: "provider_not_configured",
+    });
+  }
+
+  const state = crypto.randomBytes(32).toString("base64url");
+  await OAuthFlow.create({
+    stateHash: hashOAuthValue(state),
+    provider,
+    purpose,
+    userId: user?._id,
+    tokenVersion: user?.tokenVersion,
+    expiresAt: new Date(Date.now() + 10 * 60_000),
+  });
+
+  const redirectUri = getOAuthCallbackUrl(provider, req);
+  const authorizationUrl =
+    provider === "google"
+      ? new URL("https://accounts.google.com/o/oauth2/v2/auth")
+      : new URL("https://www.facebook.com/v22.0/dialog/oauth");
+  authorizationUrl.search = new URLSearchParams({
+    client_id: credentials.clientId,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope:
+      provider === "google" ? "openid email profile" : "email,public_profile",
+    state,
+    ...(provider === "google" && { prompt: "select_account" }),
+  }).toString();
+  return authorizationUrl.toString();
+};
+
+const fetchOAuthProfile = async (provider, code, req) => {
+  const credentials = getOAuthCredentials(provider);
+  const redirectUri = getOAuthCallbackUrl(provider, req);
+  let tokenUrl;
+  let tokenOptions;
+
+  if (provider === "google") {
+    tokenUrl = "https://oauth2.googleapis.com/token";
+    tokenOptions = {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: credentials.clientId,
+        client_secret: credentials.clientSecret,
+        redirect_uri: redirectUri,
+        grant_type: "authorization_code",
+      }),
+    };
+  } else {
+    tokenUrl = new URL("https://graph.facebook.com/v22.0/oauth/access_token");
+    tokenUrl.search = new URLSearchParams({
+      code,
+      client_id: credentials.clientId,
+      client_secret: credentials.clientSecret,
+      redirect_uri: redirectUri,
+    }).toString();
+    tokenOptions = { method: "GET" };
+  }
+
+  const tokenResponse = await fetch(tokenUrl, {
+    ...tokenOptions,
+    signal: AbortSignal.timeout(15_000),
+  });
+  const tokenData = await tokenResponse.json().catch(() => ({}));
+  if (!tokenResponse.ok || !tokenData.access_token) {
+    throw Object.assign(new Error("OAuth token exchange failed."), {
+      code: "provider_exchange_failed",
+    });
+  }
+
+  const profileUrl =
+    provider === "google"
+      ? "https://openidconnect.googleapis.com/v1/userinfo"
+      : "https://graph.facebook.com/v22.0/me?fields=id,name,email";
+  const profileResponse = await fetch(profileUrl, {
+    headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    signal: AbortSignal.timeout(15_000),
+  });
+  const profile = await profileResponse.json().catch(() => ({}));
+  const providerId = provider === "google" ? profile.sub : profile.id;
+  if (!profileResponse.ok || typeof providerId !== "string") {
+    throw Object.assign(new Error("OAuth profile request failed."), {
+      code: "provider_profile_failed",
+    });
+  }
+
+  const verifiedEmail =
+    provider === "google"
+      ? profile.email_verified === true
+      : typeof profile.email === "string";
+  return {
+    id: providerId,
+    name: typeof profile.name === "string" ? profile.name.trim() : "",
+    email:
+      verifiedEmail && typeof profile.email === "string"
+        ? normalizeEmail(profile.email)
+        : "",
+    verifiedEmail,
+  };
+};
+
+const getOrCreateOAuthUser = async (provider, profile) => {
+  const providerField = provider === "google" ? "googleId" : "facebookId";
+  let user = await User.findOne({ [providerField]: profile.id });
+  if (user) return user;
+
+  if (provider === "google" && profile.verifiedEmail && profile.email) {
+    user = await User.findOne({ email: profile.email });
+    if (user) {
+      if (user.googleId && user.googleId !== profile.id) {
+        throw Object.assign(new Error("Google account is already linked."), {
+          code: "account_link_conflict",
+        });
+      }
+      user.googleId = profile.id;
+      await user.save();
+      return user;
+    }
+  }
+
+  if (profile.email && (await User.findOne({ email: profile.email }))) {
+    throw Object.assign(new Error("An account already uses this email."), {
+      code: "account_requires_link",
+    });
+  }
+
+  const prefix = provider === "google" ? "g_" : "f_";
+  let username = `${prefix}${profile.id}`.slice(0, 32);
+  if (await User.exists({ username })) {
+    username = `${prefix}${crypto.randomBytes(10).toString("hex")}`;
+  }
+  const randomPassword = crypto.randomBytes(32).toString("hex");
+  user = new User({
+    username,
+    ...(profile.email && { email: profile.email }),
+    password: await bcrypt.hash(randomPassword, 10),
+    passwordAuthEnabled: false,
+    displayName: profile.name.slice(0, 32) || "Người chơi",
+    [providerField]: profile.id,
+  });
+  await user.save();
+  return user;
+};
+
+const oauthUserPayload = (user) => ({
+  id: user._id,
+  displayName: user.displayName,
+  wins: user.wins,
+  matches: user.matches,
+});
+
+const oauthFlowLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+});
+
 // --- API AUTHENTICATION ---
+app.get("/api/auth/providers", requireAuthenticatedUser, (req, res) => {
+  const user = req.authenticatedUser;
+  res.json({
+    google: Boolean(user.googleId),
+    facebook: Boolean(user.facebookId),
+    password: user.passwordAuthEnabled !== false,
+  });
+});
+
+app.get("/api/auth/:provider/start", oauthFlowLimiter, async (req, res) => {
+  const { provider } = req.params;
+  if (!OAUTH_PROVIDERS.has(provider)) return res.sendStatus(404);
+  try {
+    const url = await createOAuthAuthorizationUrl(provider, "login", req);
+    return res.redirect(url);
+  } catch (err) {
+    return redirectToClient(res, {
+      oauth_error:
+        err.code === "provider_not_configured"
+          ? `${provider}_not_configured`
+          : "oauth_start_failed",
+    });
+  }
+});
+
+app.post(
+  "/api/auth/:provider/link",
+  oauthFlowLimiter,
+  requireAuthenticatedUser,
+  async (req, res) => {
+    const { provider } = req.params;
+    if (!OAUTH_PROVIDERS.has(provider)) return res.sendStatus(404);
+    try {
+      const url = await createOAuthAuthorizationUrl(
+        provider,
+        "link",
+        req,
+        req.authenticatedUser,
+      );
+      return res.json({ url });
+    } catch (err) {
+      return res
+        .status(err.code === "provider_not_configured" ? 503 : 500)
+        .json({
+          message:
+            err.code === "provider_not_configured"
+              ? `Đăng nhập ${provider} chưa được cấu hình.`
+              : "Không thể bắt đầu liên kết tài khoản.",
+        });
+    }
+  },
+);
+
+app.get("/api/auth/:provider/callback", oauthFlowLimiter, async (req, res) => {
+  const { provider } = req.params;
+  const state = typeof req.query.state === "string" ? req.query.state : "";
+  if (!OAUTH_PROVIDERS.has(provider) || !state) {
+    return redirectToClient(res, { oauth_error: "invalid_oauth_state" });
+  }
+
+  try {
+    const flow = await OAuthFlow.findOneAndDelete({
+      stateHash: hashOAuthValue(state),
+      provider,
+      purpose: { $in: ["login", "link"] },
+      expiresAt: { $gt: new Date() },
+    });
+    if (!flow) {
+      return redirectToClient(res, { oauth_error: "invalid_oauth_state" });
+    }
+    if (req.query.error || typeof req.query.code !== "string") {
+      return redirectToClient(res, { oauth_error: "oauth_cancelled" });
+    }
+
+    const profile = await fetchOAuthProfile(provider, req.query.code, req);
+    const providerField = provider === "google" ? "googleId" : "facebookId";
+
+    if (flow.purpose === "link") {
+      const user = await User.findById(flow.userId);
+      if (!user || (flow.tokenVersion || 0) !== (user.tokenVersion || 0)) {
+        return redirectToClient(res, { oauth_error: "session_expired" });
+      }
+      const linkedUser = await User.findOne({ [providerField]: profile.id });
+      if (linkedUser && !linkedUser._id.equals(user._id)) {
+        return redirectToClient(res, {
+          oauth_error: "provider_already_linked",
+        });
+      }
+      user[providerField] = profile.id;
+      await user.save();
+      return redirectToClient(res, { oauth_linked: provider });
+    }
+
+    const user = await getOrCreateOAuthUser(provider, profile);
+    const code = crypto.randomBytes(32).toString("base64url");
+    await OAuthFlow.create({
+      codeHash: hashOAuthValue(code),
+      provider,
+      purpose: "exchange",
+      userId: user._id,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    return redirectToClient(res, { oauth_code: code });
+  } catch (err) {
+    console.error("OAuth callback failed:", { provider, code: err.code });
+    const oauthError =
+      err.code === "account_requires_link"
+        ? "account_requires_link"
+        : err.code === "account_link_conflict"
+          ? "provider_already_linked"
+          : "oauth_failed";
+    return redirectToClient(res, { oauth_error: oauthError });
+  }
+});
+
+app.post("/api/auth/exchange", oauthFlowLimiter, async (req, res) => {
+  const { code } = req.body || {};
+  if (typeof code !== "string" || code.length > 100) {
+    return res.status(400).json({ message: "Mã đăng nhập không hợp lệ." });
+  }
+
+  try {
+    const flow = await OAuthFlow.findOneAndDelete({
+      codeHash: hashOAuthValue(code),
+      purpose: "exchange",
+      expiresAt: { $gt: new Date() },
+    });
+    if (!flow) {
+      return res.status(400).json({ message: "Mã đăng nhập đã hết hạn." });
+    }
+    const user = await User.findById(flow.userId);
+    if (!user)
+      return res.status(400).json({ message: "Tài khoản không tồn tại." });
+
+    const token = jwt.sign(
+      {
+        userId: user._id.toString(),
+        username: user.username,
+        tokenVersion: user.tokenVersion || 0,
+      },
+      JWT_SECRET,
+      { expiresIn: "7d" },
+    );
+    return res.json({ token, user: oauthUserPayload(user) });
+  } catch (err) {
+    console.error("OAuth code exchange failed:", err.message);
+    return res.status(500).json({ message: "Không thể hoàn tất đăng nhập." });
+  }
+});
+
 app.post("/api/register", authLimiter, async (req, res) => {
   try {
     const { username, email, password, displayName } = req.body || {};
@@ -324,6 +703,85 @@ app.post("/api/login", authLimiter, async (req, res) => {
     res.status(500).json({ message: "Lỗi máy chủ!" });
   }
 });
+
+app.post(
+  "/api/password/change",
+  passwordChangeLimiter,
+  requireAuthenticatedUser,
+  async (req, res) => {
+    const { currentPassword, newPassword } = req.body || {};
+    const user = req.authenticatedUser;
+    const hasPassword = user.passwordAuthEnabled !== false;
+    if (
+      (hasPassword &&
+        (typeof currentPassword !== "string" ||
+          !currentPassword ||
+          Buffer.byteLength(currentPassword, "utf8") > 72)) ||
+      typeof newPassword !== "string" ||
+      newPassword.length < 8 ||
+      Buffer.byteLength(newPassword, "utf8") > 72
+    ) {
+      return res.status(400).json({
+        message: "Mật khẩu mới phải có ít nhất 8 ký tự và không quá 72 byte.",
+      });
+    }
+
+    try {
+      if (
+        hasPassword &&
+        !(await bcrypt.compare(currentPassword, user.password))
+      ) {
+        return res
+          .status(400)
+          .json({ message: "Mật khẩu hiện tại không chính xác." });
+      }
+      if (hasPassword && currentPassword === newPassword) {
+        return res.status(400).json({
+          message: "Mật khẩu mới phải khác mật khẩu hiện tại.",
+        });
+      }
+
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      const updatedUser = await User.findOneAndUpdate(
+        {
+          _id: user._id,
+          tokenVersion: { $in: [user.tokenVersion || 0, null] },
+        },
+        {
+          $set: { password: hashedPassword, passwordAuthEnabled: true },
+          $inc: { tokenVersion: 1 },
+          $unset: {
+            passwordResetOtpHash: 1,
+            passwordResetOtpExpiresAt: 1,
+            passwordResetOtpAttempts: 1,
+            passwordResetRequestedAt: 1,
+          },
+        },
+        { new: true },
+      );
+      if (!updatedUser) {
+        return res.status(401).json({ message: "Vui lòng đăng nhập lại." });
+      }
+
+      const token = jwt.sign(
+        {
+          userId: updatedUser._id.toString(),
+          username: updatedUser.username,
+          tokenVersion: updatedUser.tokenVersion || 0,
+        },
+        JWT_SECRET,
+        { expiresIn: "7d" },
+      );
+      return res.json({
+        token,
+        message: "Đổi mật khẩu thành công.",
+      });
+    } catch (err) {
+      console.error("Password change failed:", err.message);
+      return res.status(500).json({ message: "Lỗi máy chủ!" });
+    }
+  },
+);
 
 app.post("/api/forgot-password", async (req, res) => {
   res.status(410).json({

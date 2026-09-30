@@ -5,7 +5,7 @@ import io from "socket.io-client";
 import { BOARD_SIZES, SHOPS, TAUNT_TEXTS } from "./constants/game";
 
 // Import Audio Utilities
-import { SERVER_URL } from "./utils/api";
+import { apiUrl, SERVER_URL } from "./utils/api";
 import { playBGM, playSFX, stopBGM } from "./utils/sound";
 
 // Import Components
@@ -34,6 +34,42 @@ const socket = io(SERVER_URL, {
   tryAllTransports: true,
 });
 
+const getOAuthCallbackAlert = () => {
+  const params = new URLSearchParams(window.location.search);
+  const linkedProvider = params.get("oauth_linked");
+  const oauthError = params.get("oauth_error");
+  const providerName = linkedProvider === "google" ? "Google" : "Facebook";
+  const errorMessages = {
+    google_not_configured: "Đăng nhập Google chưa được cấu hình.",
+    facebook_not_configured: "Đăng nhập Facebook chưa được cấu hình.",
+    account_requires_link:
+      "Tài khoản này đã tồn tại. Hãy đăng nhập bằng mật khẩu rồi liên kết Google/Facebook trong Cài đặt.",
+    provider_already_linked:
+      "Tài khoản Google/Facebook này đã liên kết với một tài khoản khác.",
+    session_expired: "Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.",
+    oauth_cancelled: "Bạn đã hủy đăng nhập bằng mạng xã hội.",
+  };
+
+  if (linkedProvider) {
+    return {
+      show: true,
+      title: "Đã liên kết tài khoản",
+      message: `Đã liên kết ${providerName} với tài khoản.`,
+      type: "success",
+    };
+  }
+  if (oauthError) {
+    return {
+      show: true,
+      title: "Đăng nhập thất bại",
+      message:
+        errorMessages[oauthError] || "Không thể xác thực với nhà cung cấp.",
+      type: "error",
+    };
+  }
+  return { show: false, title: "", message: "", type: "info" };
+};
+
 export default function App() {
   // --- STATES TÀI KHOẢN ---
   const [currentUser, setCurrentUser] = useState(() => {
@@ -61,12 +97,7 @@ export default function App() {
   }, [soundEnabled, sfxVolume]);
 
   // --- HỆ THỐNG THÔNG BÁO CUSTOM (CUSTOM ALERT UI) ---
-  const [customAlert, setCustomAlert] = useState({
-    show: false,
-    title: "",
-    message: "",
-    type: "info",
-  });
+  const [customAlert, setCustomAlert] = useState(getOAuthCallbackAlert);
   const showAlert = (title, message, type = "info") => {
     setCustomAlert({ show: true, title, message, type });
   };
@@ -147,6 +178,60 @@ export default function App() {
   };
 
   useEffect(() => {
+    const url = new URL(window.location.href);
+    const oauthCode = url.searchParams.get("oauth_code");
+    if (
+      !oauthCode &&
+      !url.searchParams.has("oauth_linked") &&
+      !url.searchParams.has("oauth_error")
+    ) {
+      return;
+    }
+
+    url.searchParams.delete("oauth_code");
+    url.searchParams.delete("oauth_linked");
+    url.searchParams.delete("oauth_error");
+    window.history.replaceState(
+      null,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+
+    if (oauthCode) {
+      const controller = new AbortController();
+      fetch(apiUrl("/api/auth/exchange"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: oauthCode }),
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.message || "Không thể hoàn tất đăng nhập.");
+          }
+          localStorage.setItem("token", data.token);
+          localStorage.setItem("user", JSON.stringify(data.user));
+          setCurrentUser(data.user);
+          setShowAuthModal(false);
+          socket.auth = { token: data.token };
+          socket.disconnect();
+          socket.connect();
+        })
+        .catch((error) => {
+          if (error.name === "AbortError") return;
+          setCustomAlert({
+            show: true,
+            title: "Đăng nhập thất bại",
+            message: error.message,
+            type: "error",
+          });
+        });
+      return () => controller.abort();
+    }
+  }, []);
+
+  useEffect(() => {
     if (vibrate && recentShot && window.navigator.vibrate) {
       window.navigator.vibrate([100, 50, 100]);
     }
@@ -165,17 +250,6 @@ export default function App() {
       stopBGM();
     }
   }, [gameState, soundEnabled, bgmVolume]);
-
-  useEffect(() => {
-    if (
-      gameState === "PLAYING" &&
-      isMyTurn &&
-      turnTimeLeft <= 5 &&
-      turnTimeLeft > 0
-    ) {
-      playSFX("TurnTimer.mp3", soundEnabled, sfxVolume * 0.7);
-    }
-  }, [turnTimeLeft, isMyTurn, gameState, soundEnabled, sfxVolume]);
 
   useEffect(() => {
     let timer = null;
@@ -970,6 +1044,11 @@ export default function App() {
           vibrate={vibrate}
           onToggleVibrate={() => setVibrate(!vibrate)}
           playerName={currentUser?.displayName || playerName}
+          isAuthenticated={Boolean(currentUser)}
+          onPasswordChanged={(token) => {
+            localStorage.setItem("token", token);
+            refreshSocketAuth();
+          }}
         />
         <GuideModal isOpen={showGuide} onClose={() => setShowGuide(false)} />
         <LeaderboardModal

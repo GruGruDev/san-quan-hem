@@ -122,6 +122,12 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
     }
   };
 
+  const startSocialLogin = (provider) => {
+    setError("");
+    setNotice("");
+    window.location.assign(apiUrl(`/api/auth/${provider}/start`));
+  };
+
   return (
     <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in select-none">
       <div className="w-full max-w-sm bg-slate-900 border-2 border-amber-500/40 rounded-3xl p-5 shadow-2xl flex flex-col gap-4 relative">
@@ -281,6 +287,30 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
             </button>
           )}
         </form>
+
+        {(mode === "LOGIN" || mode === "REGISTER") && (
+          <div className="flex flex-col gap-2">
+            <div className="text-center text-[10px] text-slate-400 uppercase">
+              Hoặc tiếp tục với
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => startSocialLogin("google")}
+                className="flex-1 py-2.5 rounded-xl border border-slate-700 bg-white text-slate-900 font-bold text-xs hover:bg-slate-100 transition"
+              >
+                Google
+              </button>
+              <button
+                type="button"
+                onClick={() => startSocialLogin("facebook")}
+                className="flex-1 py-2.5 rounded-xl bg-[#1877F2] text-white font-bold text-xs hover:brightness-110 transition"
+              >
+                Facebook
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Chuyển đổi Mode bên dưới */}
         <div className="text-center text-xs text-slate-400 border-t border-slate-800 pt-3">

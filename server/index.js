@@ -290,8 +290,7 @@ const createOAuthAuthorizationUrl = async (provider, purpose, req, user) => {
     client_id: credentials.clientId,
     redirect_uri: redirectUri,
     response_type: "code",
-    scope:
-      provider === "google" ? "openid email profile" : "email,public_profile",
+    scope: provider === "google" ? "openid email profile" : "public_profile",
     state,
     ...(provider === "google" && { prompt: "select_account" }),
   }).toString();
@@ -342,7 +341,7 @@ const fetchOAuthProfile = async (provider, code, req) => {
   const profileUrl =
     provider === "google"
       ? "https://openidconnect.googleapis.com/v1/userinfo"
-      : "https://graph.facebook.com/v22.0/me?fields=id,name,email";
+      : "https://graph.facebook.com/v22.0/me?fields=id,name";
   const profileResponse = await fetch(profileUrl, {
     headers: { Authorization: `Bearer ${tokenData.access_token}` },
     signal: AbortSignal.timeout(15_000),
@@ -356,9 +355,7 @@ const fetchOAuthProfile = async (provider, code, req) => {
   }
 
   const verifiedEmail =
-    provider === "google"
-      ? profile.email_verified === true
-      : typeof profile.email === "string";
+    provider === "google" && profile.email_verified === true;
   return {
     id: providerId,
     name: typeof profile.name === "string" ? profile.name.trim() : "",

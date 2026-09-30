@@ -22,6 +22,8 @@ if (!MONGO_URI || !JWT_SECRET || JWT_SECRET.length < 32) {
 }
 
 const SMTP_PORT = Number.parseInt(process.env.SMTP_PORT || "587", 10);
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const RESEND_FROM = process.env.RESEND_FROM;
 const mailTransport =
   process.env.SMTP_HOST &&
   process.env.SMTP_USER &&
@@ -43,6 +45,46 @@ const mailTransport =
         },
       })
     : null;
+const emailDeliveryConfigured = RESEND_API_KEY
+  ? Boolean(RESEND_FROM)
+  : Boolean(mailTransport);
+
+const sendPasswordResetEmail = async (email, code) => {
+  const subject = "Mã xác minh đặt lại mật khẩu";
+  const text = `Mã xác minh của bạn là ${code}. Mã hết hạn sau 10 phút. Nếu bạn không yêu cầu, hãy bỏ qua email này.`;
+
+  if (RESEND_API_KEY) {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: RESEND_FROM,
+        to: [email],
+        subject,
+        text,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    if (!response.ok) {
+      const error = new Error(`Resend returned HTTP ${response.status}.`);
+      error.code = `RESEND_HTTP_${response.status}`;
+      throw error;
+    }
+    return;
+  }
+
+  if (!mailTransport) throw new Error("Email delivery is not configured.");
+  await mailTransport.sendMail({
+    from: process.env.SMTP_FROM,
+    to: email,
+    subject,
+    text,
+  });
+};
 
 const getUtcWeekStart = (date = new Date()) => {
   const weekStart = new Date(
@@ -294,7 +336,7 @@ app.post(
   "/api/password-reset/request",
   passwordResetRequestLimiter,
   async (req, res) => {
-    if (!mailTransport) {
+    if (!emailDeliveryConfigured) {
       return res.status(503).json({
         message: "Dịch vụ email khôi phục chưa được cấu hình trên máy chủ.",
       });
@@ -346,12 +388,7 @@ app.post(
       if (!updatedUser) return res.json({ message: genericMessage });
 
       try {
-        await mailTransport.sendMail({
-          from: process.env.SMTP_FROM,
-          to: email,
-          subject: "Mã xác minh đặt lại mật khẩu",
-          text: `Mã xác minh của bạn là ${code}. Mã hết hạn sau 10 phút. Nếu bạn không yêu cầu, hãy bỏ qua email này.`,
-        });
+        await sendPasswordResetEmail(email, code);
       } catch (err) {
         await User.updateOne(
           { _id: user._id },
@@ -364,7 +401,12 @@ app.post(
             },
           },
         );
-        console.error("Password reset email delivery failed.");
+        console.error("Password reset email delivery failed:", {
+          code: err.code,
+          command: err.command,
+          responseCode: err.responseCode,
+          message: err.message,
+        });
         return res.status(503).json({
           message: "Không gửi được email lúc này. Vui lòng thử lại sau.",
         });

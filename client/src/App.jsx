@@ -1028,10 +1028,12 @@ export default function App() {
                   onFireShot={handleFireShot}
                   opponentAimingIndex={opponentAimingIndex}
                   onAimShot={handleAimShot}
-                  recentShot={showTaunt ? recentShot : null}
+                  recentShot={recentShot}
+                  showTaunt={showTaunt}
                   soundEnabled={soundEnabled}
                   shops={activeShops}
                   boardSize={gridSize}
+                  equippedCosmetics={currentUser?.equippedCosmetics || []}
                 />
               </div>
             </main>
@@ -1073,6 +1075,7 @@ export default function App() {
                 winnerBoards={winnerBoards}
                 shops={activeShops}
                 boardSize={gridSize}
+                equippedCosmetics={currentUser?.equippedCosmetics || []}
                 onRematch={handleRematch}
                 onLeave={handleLeaveRoom}
               />
@@ -1127,6 +1130,12 @@ export default function App() {
         <DonateModal
           isOpen={showDonateModal}
           onClose={() => setShowDonateModal(false)}
+          currentUser={currentUser}
+          onAccountUpdate={(account) => {
+            const updated = { ...currentUser, ...account };
+            localStorage.setItem("user", JSON.stringify(updated));
+            setCurrentUser(updated);
+          }}
         />
         <PrivateRoomModal
           isOpen={showPrivateModal}

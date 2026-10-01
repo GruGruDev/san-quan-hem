@@ -75,14 +75,14 @@ export default function LobbyScreen({
             </h1>
           </div>
 
-          {/* Cụm Nút BXH + Hướng Dẫn + Donate */}
+          {/* Cụm Nút Cửa Hàng + BXH + Hướng Dẫn */}
           <div className="flex gap-1.5">
             <button
               onClick={onOpenDonate}
-              className="w-10 h-10 bg-rose-950/80 hover:bg-rose-900/80 border border-rose-500/50 rounded-2xl flex items-center justify-center text-rose-300 font-black text-base shadow-lg active:scale-95 transition backdrop-blur-md animate-pulse"
-              title="Ủng Hộ Tác Giả"
+              className="w-10 h-10 bg-cyan-950/80 hover:bg-cyan-900/80 border border-cyan-500/50 rounded-2xl flex items-center justify-center text-cyan-200 font-black text-base shadow-lg active:scale-95 transition backdrop-blur-md"
+              title="Cửa hàng & nạp Hẻm Coin"
             >
-              💖
+              🛍️
             </button>
             <button
               onClick={onOpenLeaderboard}

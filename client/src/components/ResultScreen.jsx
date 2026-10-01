@@ -9,6 +9,7 @@ export default function ResultScreen({
   winnerBoards = [],
   shops = [],
   boardSize = 8,
+  equippedCosmetics = [],
   onRematch,
   onLeave,
 }) {
@@ -18,6 +19,10 @@ export default function ResultScreen({
   const [reportStatus, setReportStatus] = useState("");
   const [reportBusy, setReportBusy] = useState(false);
   const winnerBoard = winnerBoards[selectedBoardIndex];
+  const hasVictoryEffect = equippedCosmetics.some(
+    (item) =>
+      item.slot === "victory_effect" && item.itemId === "victory_confetti",
+  );
 
   const submitReport = async (event) => {
     event.preventDefault();
@@ -38,7 +43,9 @@ export default function ResultScreen({
   return (
     <div className="absolute inset-0 z-50 flex flex-col items-center justify-start overflow-y-auto bg-black/90 p-3 text-center animate-fade-in">
       <div className="my-auto flex w-full max-w-sm flex-col items-center py-2">
-        <div className="w-24 h-24 relative flex items-center justify-center mb-4">
+        <div
+          className={`w-24 h-24 relative flex items-center justify-center mb-4 ${hasVictoryEffect ? "animate-pulse drop-shadow-[0_0_20px_rgba(251,191,36,0.85)]" : ""}`}
+        >
           <img
             src={isWinner ? "/trung.png" : "/khongtrung.png"}
             className="w-full h-full object-contain animate-bounce"

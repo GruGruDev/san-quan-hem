@@ -12,6 +12,7 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },
   passwordAuthEnabled: { type: Boolean, default: true },
   displayName: { type: String, required: true },
+  freeNameChangeAvailable: { type: Boolean, default: true },
   bio: { type: String, default: "", maxlength: 280 },
   profileTheme: {
     type: String,
@@ -24,6 +25,24 @@ const userSchema = new mongoose.Schema({
     default: "scooter",
   },
   equippedDecoration: { type: String, default: "", maxlength: 64 },
+  equippedCosmetics: [
+    {
+      slot: {
+        type: String,
+        enum: [
+          "avatar_frame",
+          "profile_background",
+          "nameplate",
+          "hit_effect",
+          "miss_effect",
+          "sunk_effect",
+          "shop_skin",
+          "victory_effect",
+        ],
+      },
+      itemId: { type: String, required: true },
+    },
+  ],
   googleId: { type: String, unique: true, sparse: true },
   facebookId: { type: String, unique: true, sparse: true },
   tokenVersion: { type: Number, default: 0 },
@@ -33,6 +52,9 @@ const userSchema = new mongoose.Schema({
   passwordResetRequestedAt: { type: Date, select: false },
   wins: { type: Number, default: 0 },
   matches: { type: Number, default: 0 },
+  xuBalance: { type: Number, default: 300, min: 0 },
+  hemCoinBalance: { type: Number, default: 0, min: 0 },
+  achievementClaims: [{ type: String }],
   weeklyWins: { type: Number, default: 0 },
   weeklyMatches: { type: Number, default: 0 },
   weeklyWeekStart: { type: Date, default: Date.now },

@@ -20,6 +20,9 @@ const createAdminRouter = ({
   GameReport,
   GameSettings,
   AdminAuditLog,
+  StoreItem,
+  PaymentOrder,
+  WalletLedger,
   activeRooms,
   matchmakingQueues,
   io,
@@ -247,7 +250,103 @@ const createAdminRouter = ({
   });
 
   router.get("/catalog", (req, res) => {
-    res.json({ shops: SHOP_CATALOG, itemIds: [] });
+    StoreItem.find({})
+      .sort({ sortOrder: 1 })
+      .lean()
+      .then((items) => res.json({ shops: SHOP_CATALOG, items }))
+      .catch(() =>
+        res.status(500).json({ message: "Không tải được cửa hàng." }),
+      );
+  });
+
+  router.get("/payments", async (req, res) => {
+    if (!requireDatabase(res)) return;
+    await PaymentOrder.updateMany(
+      { status: "pending", expiresAt: { $lte: new Date() } },
+      { $set: { status: "expired" } },
+    );
+    const orders = await PaymentOrder.find()
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .populate("userId", "username displayName")
+      .lean();
+    res.json(orders);
+  });
+
+  router.post("/payments/:orderId/approve", async (req, res) => {
+    if (!requireDatabase(res)) return;
+    const session = await User.startSession();
+    let approvedOrder;
+    try {
+      await session.withTransaction(async () => {
+        const order = await PaymentOrder.findOne({
+          _id: req.params.orderId,
+          status: "pending",
+          expiresAt: { $gt: new Date() },
+        }).session(session);
+        if (!order) {
+          throw Object.assign(new Error("Đơn không còn chờ duyệt."), {
+            status: 404,
+          });
+        }
+        order.status = "credited";
+        order.provider = "manual";
+        order.providerTransactionId = `manual:${order.orderCode}`;
+        order.paidAt = new Date();
+        await order.save({ session });
+
+        const user = await User.findByIdAndUpdate(
+          order.userId,
+          { $inc: { hemCoinBalance: order.coinAmount } },
+          { new: true, session },
+        );
+        if (!user) throw new Error("Không tìm thấy tài khoản nhận coin.");
+        await WalletLedger.create(
+          [
+            {
+              userId: user._id,
+              currency: "hemCoin",
+              delta: order.coinAmount,
+              balanceAfter: user.hemCoinBalance,
+              type: "topup",
+              reference: `topup:${order.providerTransactionId}`,
+              description: `Admin duyệt ${order.coinAmount} Hẻm Coin`,
+            },
+          ],
+          { session },
+        );
+        approvedOrder = order;
+      });
+    } catch (error) {
+      if (error.status)
+        return res.status(error.status).json({ message: error.message });
+      if (error.code === 11000)
+        return res.status(409).json({ message: "Đơn đã được xử lý." });
+      console.error("Manual payment approval failed:", error.message);
+      return res.status(500).json({ message: "Không thể duyệt đơn nạp." });
+    } finally {
+      await session.endSession();
+    }
+    await writeAudit(req, "payment.approve", "payment", approvedOrder.id, {
+      orderCode: approvedOrder.orderCode,
+      coinAmount: approvedOrder.coinAmount,
+    });
+    res.json({ order: approvedOrder });
+  });
+
+  router.post("/payments/:orderId/reject", async (req, res) => {
+    if (!requireDatabase(res)) return;
+    const order = await PaymentOrder.findOneAndUpdate(
+      { _id: req.params.orderId, status: "pending" },
+      { $set: { status: "rejected" } },
+      { new: true },
+    );
+    if (!order)
+      return res.status(404).json({ message: "Không tìm thấy đơn đang chờ." });
+    await writeAudit(req, "payment.reject", "payment", order.id, {
+      orderCode: order.orderCode,
+    });
+    res.json({ order });
   });
 
   router.get("/leaderboard", async (req, res) => {

@@ -1,4 +1,5 @@
 const express = require("express");
+const crypto = require("crypto");
 const { rateLimit } = require("express-rate-limit");
 
 const REACTIONS = ["heart", "respect", "spicy", "gg"];
@@ -8,6 +9,7 @@ const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const createSocialRouter = ({
   User,
+  WalletLedger,
   GameMatch,
   Friendship,
   DirectMessage,
@@ -57,7 +59,7 @@ const createSocialRouter = ({
       username: { $regex: `^${escapeRegex(username)}$`, $options: "i" },
     })
       .select(
-        "username displayName bio profileTheme avatarId equippedDecoration wins matches isDonor donorSince createdAt",
+        "username displayName bio profileTheme avatarId equippedDecoration equippedCosmetics wins matches isDonor donorSince createdAt",
       )
       .lean();
     if (!user)
@@ -98,6 +100,10 @@ const createSocialRouter = ({
       wins: user.wins,
       matches: user.matches,
       isDonor: user.isDonor,
+      xuBalance: user.xuBalance || 0,
+      hemCoinBalance: user.hemCoinBalance || 0,
+      freeNameChangeAvailable: user.freeNameChangeAvailable !== false,
+      equippedCosmetics: user.equippedCosmetics || [],
       inventory: user.inventory.map((item) => ({
         itemId: item.itemId,
         quantity: item.quantity,
@@ -130,7 +136,7 @@ const createSocialRouter = ({
 
   router.put("/profile", async (req, res) => {
     if (!requireDatabase(res)) return;
-    const user = req.authenticatedUser;
+    let user = req.authenticatedUser;
     const { displayName, bio, profileTheme, avatarId, equippedDecoration } =
       req.body || {};
     if (typeof displayName === "string") {
@@ -140,7 +146,58 @@ const createSocialRouter = ({
           .status(400)
           .json({ message: "Tên hiển thị phải từ 1 đến 32 ký tự." });
       }
-      user.displayName = cleanName;
+      if (cleanName !== user.displayName) {
+        const renameFee = 500;
+        const session = await User.startSession();
+        try {
+          await session.withTransaction(async () => {
+            const updatedUser = await User.findById(user._id).session(session);
+            if (!updatedUser) {
+              throw new Error("Không tìm thấy tài khoản.");
+            }
+            if (updatedUser.displayName === cleanName) {
+              user = updatedUser;
+              return;
+            }
+            const freeRename = updatedUser.freeNameChangeAvailable !== false;
+            if (!freeRename && (updatedUser.xuBalance || 0) < renameFee) {
+              throw Object.assign(
+                new Error("Đổi tên lần tiếp theo cần 500 Xu Hẻm."),
+                { code: "INSUFFICIENT_XU" },
+              );
+            }
+            updatedUser.displayName = cleanName;
+            updatedUser.freeNameChangeAvailable = false;
+            if (!freeRename) updatedUser.xuBalance -= renameFee;
+            await updatedUser.save({ session });
+            user = updatedUser;
+            if (!freeRename) {
+              await WalletLedger.create(
+                [
+                  {
+                    userId: user._id,
+                    currency: "xu",
+                    delta: -renameFee,
+                    balanceAfter: user.xuBalance,
+                    type: "name_change",
+                    reference: `rename:${user._id}:${crypto.randomUUID()}`,
+                    description: "Đổi tên hiển thị",
+                  },
+                ],
+                { session },
+              );
+            }
+          });
+        } catch (error) {
+          if (error.code === "INSUFFICIENT_XU") {
+            return res.status(402).json({ message: error.message });
+          }
+          throw error;
+        } finally {
+          await session.endSession();
+        }
+        user.$session(null);
+      }
     }
     if (typeof bio === "string") {
       if (bio.length > 280)
@@ -193,6 +250,10 @@ const createSocialRouter = ({
       wins: user.wins,
       matches: user.matches,
       isDonor: user.isDonor,
+      xuBalance: user.xuBalance || 0,
+      hemCoinBalance: user.hemCoinBalance || 0,
+      freeNameChangeAvailable: user.freeNameChangeAvailable !== false,
+      equippedCosmetics: user.equippedCosmetics || [],
     });
   });
 

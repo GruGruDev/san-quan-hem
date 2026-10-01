@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   ["matches", "Trận đấu", "⚔"],
   ["shops", "Quán / Chiến hạm", "▤"],
   ["items", "Vật phẩm", "◇"],
+  ["payments", "Đơn nạp Coin", "¤"],
   ["leaderboard", "BXH", "♜"],
   ["reports", "Báo cáo / Gian lận", "⚑"],
   ["announcements", "Thông báo", "▣"],
@@ -25,6 +26,7 @@ const TAB_ENDPOINTS = {
   matches: "/matches",
   shops: "/catalog",
   items: "/catalog",
+  payments: "/payments",
   leaderboard: "/leaderboard",
   reports: "/reports",
   announcements: "/settings",
@@ -1125,6 +1127,80 @@ export default function AdminApp() {
                     {announcementDraft}
                   </p>
                 </div>
+              )}
+            </>
+          )}
+
+          {tab === "payments" && sectionData && (
+            <>
+              <PanelHeading
+                title="Đơn nạp Hẻm Coin"
+                detail="Chỉ duyệt sau khi đã đối soát giao dịch nhận tiền. Mỗi đơn chỉ cộng ví một lần."
+              />
+              <div className="space-y-2">
+                {sectionData.map((order) => (
+                  <article
+                    key={order._id}
+                    className="flex flex-wrap items-center justify-between gap-3 border border-zinc-800 bg-zinc-900/50 px-3 py-3"
+                  >
+                    <div>
+                      <div className="font-mono text-xs font-black text-cyan-200">
+                        {order.orderCode}
+                      </div>
+                      <div className="mt-1 text-[10px] text-zinc-400">
+                        {order.userId?.displayName || "Tài khoản"} · @
+                        {order.userId?.username || "—"}
+                      </div>
+                      <div className="mt-1 text-[10px] text-zinc-500">
+                        {Number(order.amountVnd).toLocaleString("vi-VN")} đ →{" "}
+                        {order.coinAmount} Hẻm Coin · hết hạn{" "}
+                        {new Date(order.expiresAt).toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`text-[10px] font-black uppercase ${order.status === "pending" ? "text-amber-300" : order.status === "credited" ? "text-emerald-300" : "text-zinc-500"}`}
+                      >
+                        {order.status}
+                      </span>
+                      {order.status === "pending" && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              mutate(
+                                `/api/admin/payments/${order._id}/approve`,
+                                "POST",
+                                {},
+                                "Đã cộng Hẻm Coin sau khi đối soát.",
+                              )
+                            }
+                            className="border border-emerald-700 px-2 py-1.5 text-[10px] font-bold text-emerald-200"
+                          >
+                            Xác nhận đã nhận tiền
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              mutate(
+                                `/api/admin/payments/${order._id}/reject`,
+                                "POST",
+                                {},
+                                "Đã từ chối đơn nạp.",
+                              )
+                            }
+                            className="border border-rose-900 px-2 py-1.5 text-[10px] text-rose-300"
+                          >
+                            Từ chối
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+              {!sectionData.length && (
+                <EmptyState>Chưa có đơn nạp Coin.</EmptyState>
               )}
             </>
           )}

@@ -20,8 +20,13 @@ const Friendship = require("./models/Friendship");
 const DirectMessage = require("./models/DirectMessage");
 const ProfileReaction = require("./models/ProfileReaction");
 const GameChallenge = require("./models/GameChallenge");
+const StoreItem = require("./models/StoreItem");
+const WalletLedger = require("./models/WalletLedger");
+const PaymentOrder = require("./models/PaymentOrder");
+const DailyRewardClaim = require("./models/DailyRewardClaim");
 const createAdminRouter = require("./adminRouter");
 const createSocialRouter = require("./socialRouter");
+const { createEconomyRouter, seedStoreCatalog } = require("./economyRouter");
 
 // --- BÍ MẬT LẤY TỪ BIẾN MÔI TRƯỜNG (.env / Render Dashboard) ---
 const { MONGO_URI, JWT_SECRET } = process.env;
@@ -107,8 +112,9 @@ const getUtcWeekStart = (date = new Date()) => {
   return weekStart;
 };
 
-const updatePlayerStats = (userId, isWinner) => {
+const updatePlayerStats = async (userId, isWinner, gameId) => {
   const weekStart = getUtcWeekStart();
+  const xuReward = isWinner ? 50 : 15;
   const weeklyMatches = {
     $cond: [
       { $eq: ["$weeklyWeekStart", weekStart] },
@@ -124,17 +130,35 @@ const updatePlayerStats = (userId, isWinner) => {
     ],
   };
 
-  return User.findByIdAndUpdate(userId, [
+  const user = await User.findByIdAndUpdate(userId, [
     {
       $set: {
         matches: { $add: [{ $ifNull: ["$matches", 0] }, 1] },
         wins: { $add: [{ $ifNull: ["$wins", 0] }, isWinner ? 1 : 0] },
+        xuBalance: { $add: [{ $ifNull: ["$xuBalance", 300] }, xuReward] },
         weeklyMatches,
         weeklyWins,
         weeklyWeekStart: weekStart,
       },
     },
   ]);
+  if (user) {
+    await WalletLedger.updateOne(
+      { reference: `match:${gameId}:${userId}` },
+      {
+        $setOnInsert: {
+          userId,
+          currency: "xu",
+          delta: xuReward,
+          balanceAfter: user.xuBalance,
+          type: "match_reward",
+          description: isWinner ? "Thưởng thắng trận" : "Thưởng tham gia trận",
+        },
+      },
+      { upsert: true },
+    );
+  }
+  return user;
 };
 
 const normalizeEmail = (value) =>
@@ -313,6 +337,21 @@ mongoose
   .connect(MONGO_URI)
   .then(async () => {
     console.log("✅ Đã kết nối MongoDB Atlas Cloud thành công!");
+    await User.updateMany(
+      { xuBalance: { $exists: false } },
+      {
+        $set: {
+          xuBalance: 300,
+          hemCoinBalance: 0,
+          freeNameChangeAvailable: true,
+        },
+      },
+    );
+    await User.updateMany(
+      { hemCoinBalance: { $exists: false } },
+      { $set: { hemCoinBalance: 0 } },
+    );
+    await seedStoreCatalog(StoreItem);
     const settings = await GameSettings.findOne({ key: "global" }).lean();
     if (settings) matchmakingEnabled = settings.matchmakingEnabled !== false;
   })
@@ -1181,6 +1220,9 @@ app.use(
     GameReport,
     GameSettings,
     AdminAuditLog,
+    StoreItem,
+    PaymentOrder,
+    WalletLedger,
     activeRooms,
     matchmakingQueues,
     io,
@@ -1188,6 +1230,19 @@ app.use(
     onSettingsUpdated: (settings) => {
       matchmakingEnabled = settings.matchmakingEnabled !== false;
     },
+  }),
+);
+
+app.use(
+  "/api/economy",
+  createEconomyRouter({
+    User,
+    StoreItem,
+    WalletLedger,
+    PaymentOrder,
+    DailyRewardClaim,
+    requireAuthenticatedUser,
+    webhookApiKey: process.env.SEPAY_WEBHOOK_API_KEY,
   }),
 );
 
@@ -1464,7 +1519,11 @@ const updateFinishedGameStats = async (room, winnerTeam) => {
   if (room.isBotRoom) {
     const human = Object.values(room.players).find((player) => !player.isBot);
     if (human?.userId) {
-      await updatePlayerStats(human.userId, winnerTeam === human.team);
+      await updatePlayerStats(
+        human.userId,
+        winnerTeam === human.team,
+        room.gameId,
+      );
     }
     return;
   }
@@ -1473,12 +1532,17 @@ const updateFinishedGameStats = async (room, winnerTeam) => {
     Object.values(room.players)
       .filter((player) => player.userId)
       .map((player) =>
-        updatePlayerStats(player.userId, player.team === winnerTeam),
+        updatePlayerStats(
+          player.userId,
+          player.team === winnerTeam,
+          room.gameId,
+        ),
       ),
   );
 };
 
 const broadcastGameOver = async (room, winnerTeam) => {
+  if (room.gameState === "FINISHED") return;
   room.gameState = "FINISHED";
   room.finishedAt = new Date();
   io.to(room.roomId).emit("game_over", {
@@ -1861,6 +1925,7 @@ app.use(
   "/api/social",
   createSocialRouter({
     User,
+    WalletLedger,
     GameMatch,
     Friendship,
     DirectMessage,

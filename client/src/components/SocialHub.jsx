@@ -18,6 +18,15 @@ const THEMES = {
   alley: "from-emerald-950 via-zinc-900 to-zinc-950",
   night: "from-indigo-950 via-zinc-900 to-zinc-950",
   market: "from-amber-950 via-zinc-900 to-zinc-950",
+  background_river: "from-cyan-950 via-blue-950 to-zinc-950",
+};
+const FRAME_STYLES = {
+  frame_brass: "border-amber-300 shadow-[0_0_12px_rgba(251,191,36,0.35)]",
+  frame_neon: "border-cyan-300 shadow-[0_0_14px_rgba(34,211,238,0.65)]",
+};
+const NAMEPLATES = {
+  title_regular: "DÂN HẺM CHÍNH HIỆU",
+  title_hem_chua: "CHÚA HẺM",
 };
 
 async function socialRequest(path, token, options = {}) {
@@ -48,7 +57,7 @@ function MatchBoard({ player, size }) {
           <div
             key={index}
             title={`${String.fromCharCode(65 + Math.floor(index / size))}/${(index % size) + 1}${cell?.shopId ? ` · ${cell.shopId}` : ""}${cell?.shot ? ` · ${cell.shot}` : ""}`}
-            className={`border border-orange-500/20 ${cell?.shopId ? "bg-emerald-500/50" : ""} ${cell?.shot === "HIT" ? "!bg-rose-500" : ""} ${cell?.shot === "MISS" ? "!bg-sky-950" : ""}`}
+            className={`border border-orange-500/20 ${cell?.shopId ? "bg-emerald-500/50" : ""} ${cell?.shot === "HIT" ? "bg-rose-500!" : ""} ${cell?.shot === "MISS" ? "bg-sky-950!" : ""}`}
           />
         );
       })}
@@ -338,8 +347,18 @@ export default function SocialHub({
   const outgoingRequests = friendships.filter(
     (entry) => entry.status === "pending" && entry.direction === "outgoing",
   );
+  const profileCosmetics = profileData?.profile?.equippedCosmetics || [];
+  const profileBackground = profileCosmetics.find(
+    (item) => item.slot === "profile_background",
+  )?.itemId;
+  const avatarFrame = profileCosmetics.find(
+    (item) => item.slot === "avatar_frame",
+  )?.itemId;
+  const nameplate = profileCosmetics.find(
+    (item) => item.slot === "nameplate",
+  )?.itemId;
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 p-2 backdrop-blur-sm sm:p-5">
+    <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/85 p-2 backdrop-blur-sm sm:p-5">
       <section className="flex h-[min(94dvh,54rem)] w-full max-w-5xl flex-col overflow-hidden border-2 border-amber-500/50 bg-slate-950 text-white shadow-2xl">
         <header className="flex items-center justify-between border-b border-amber-500/20 bg-slate-900/90 px-4 py-3">
           <div>
@@ -416,11 +435,13 @@ export default function SocialHub({
               {profileData ? (
                 <>
                   <article
-                    className={`relative overflow-hidden border border-amber-400/40 bg-gradient-to-br ${THEMES[profileData.profile.profileTheme] || THEMES.alley} p-4 sm:p-6`}
+                    className={`relative overflow-hidden border border-amber-400/40 bg-linear-to-br ${THEMES[profileBackground] || THEMES[profileData.profile.profileTheme] || THEMES.alley} p-4 sm:p-6`}
                   >
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div className="flex items-center gap-3">
-                        <div className="grid h-16 w-16 place-items-center border border-amber-300/50 bg-black/30 text-3xl">
+                        <div
+                          className={`grid h-16 w-16 place-items-center border bg-black/30 text-3xl ${FRAME_STYLES[avatarFrame] || "border-amber-300/50"}`}
+                        >
                           {AVATARS[profileData.profile.avatarId] || "🛵"}
                         </div>
                         <div>
@@ -438,6 +459,11 @@ export default function SocialHub({
                           <div className="mt-1 text-xs text-slate-300">
                             @{profileData.profile.username}
                           </div>
+                          {nameplate && NAMEPLATES[nameplate] && (
+                            <div className="mt-1 text-[9px] font-black uppercase text-amber-300">
+                              {NAMEPLATES[nameplate]}
+                            </div>
+                          )}
                           {profileData.profile.equippedDecoration && (
                             <div className="mt-1 text-[10px] text-amber-300">
                               ◇ {profileData.profile.equippedDecoration}
@@ -479,6 +505,15 @@ export default function SocialHub({
                       <h3 className="mb-3 text-xs font-black uppercase text-amber-200">
                         Tùy chỉnh hồ sơ
                       </h3>
+                      <p className="mb-3 text-[10px] text-slate-500">
+                        {profileForm.displayName === selfProfile?.displayName
+                          ? selfProfile?.freeNameChangeAvailable
+                            ? "Lần đổi tên đầu tiên miễn phí."
+                            : "Đổi tên tiếp theo: 500 Xu Hẻm."
+                          : selfProfile?.freeNameChangeAvailable
+                            ? "Tên mới sẽ dùng lượt đổi miễn phí đầu tiên."
+                            : "Lưu tên mới sẽ trừ 500 Xu Hẻm."}
+                      </p>
                       <div className="grid gap-3 sm:grid-cols-2">
                         <label className="text-[10px] font-bold text-slate-400">
                           Tên hiển thị

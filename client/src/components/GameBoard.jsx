@@ -16,7 +16,9 @@ export default function GameBoard({
   shotPending = false,
   onFireShot,
   recentShot,
+  showTaunt = true,
   soundEnabled = true,
+  equippedCosmetics = [],
   shops = DEFAULT_SHOPS,
   boardSize = 8,
   opponentAimingIndex, // Nhận từ App.jsx
@@ -27,6 +29,18 @@ export default function GameBoard({
   const [aimingIndex, setAimingIndex] = useState(null);
 
   const currentShopObj = shops.find((s) => s.id === selectedShop) || shops[0];
+  const cosmeticSlots = Object.fromEntries(
+    equippedCosmetics.map((cosmetic) => [cosmetic.slot, cosmetic.itemId]),
+  );
+  const getShopSkinStyle = (shopId) => {
+    if (cosmeticSlots.shop_skin === "shop_cavien_neon" && shopId === "cavien") {
+      return { filter: "hue-rotate(135deg) saturate(1.8)" };
+    }
+    if (cosmeticSlots.shop_skin === "shop_trasua_mint" && shopId === "trasua") {
+      return { filter: "hue-rotate(70deg) saturate(1.5)" };
+    }
+    return undefined;
+  };
 
   const getOccupiedIndices = (startIndex, size, isHorizontal) => {
     if (
@@ -145,6 +159,7 @@ export default function GameBoard({
                     src={cell.icon}
                     alt="Shop"
                     className="w-[85%] h-[85%] object-contain drop-shadow-md z-10 pointer-events-none"
+                    style={getShopSkinStyle(cell.shopId)}
                   />
                 )}
 
@@ -153,6 +168,7 @@ export default function GameBoard({
                     src={currentShopObj.icon}
                     alt="Preview"
                     className="w-[80%] h-[80%] object-contain opacity-70 z-10 animate-pulse pointer-events-none"
+                    style={getShopSkinStyle(selectedShop)}
                   />
                 )}
 
@@ -172,6 +188,12 @@ export default function GameBoard({
                     className="absolute inset-0 w-full h-full object-contain z-20 pointer-events-none animate-bounce"
                   />
                 )}
+                {cell?.shot === "HIT" &&
+                  cosmeticSlots.hit_effect === "hit_spark" && (
+                    <span className="absolute inset-0 z-30 flex items-center justify-center text-xl text-amber-200 drop-shadow-[0_0_6px_rgba(251,191,36,0.9)] animate-ping pointer-events-none">
+                      ✦
+                    </span>
+                  )}
 
                 {cell?.shot === "MISS" && (
                   <img
@@ -180,9 +202,22 @@ export default function GameBoard({
                     className="absolute inset-0 w-full h-full object-contain z-20 opacity-80 pointer-events-none"
                   />
                 )}
+                {cell?.shot === "MISS" &&
+                  cosmeticSlots.miss_effect === "miss_ripple" && (
+                    <span className="absolute inset-0 z-30 flex items-center justify-center text-lg text-cyan-200 animate-pulse pointer-events-none">
+                      ≈
+                    </span>
+                  )}
+                {recentShot?.type === "SUNK" &&
+                  recentShot.index === index &&
+                  cosmeticSlots.sunk_effect === "sunk_fireworks" && (
+                    <span className="absolute inset-0 z-40 flex items-center justify-center text-2xl text-amber-300 animate-ping pointer-events-none">
+                      ✹
+                    </span>
+                  )}
 
                 {/* Floating Taunt Text (Bị bắn) */}
-                {recentShot && recentShot.index === index && (
+                {showTaunt && recentShot && recentShot.index === index && (
                   <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-40 pointer-events-none whitespace-nowrap animate-float-up">
                     <span
                       className={`text-[11px] font-black px-2 py-0.5 rounded-full shadow-lg border uppercase ${
@@ -240,6 +275,12 @@ export default function GameBoard({
                     className="w-[120%] h-[120%] object-contain drop-shadow-lg z-20 animate-bounce pointer-events-none"
                   />
                 )}
+                {status === "HIT" &&
+                  cosmeticSlots.hit_effect === "hit_spark" && (
+                    <span className="absolute inset-0 z-30 flex items-center justify-center text-xl text-amber-200 drop-shadow-[0_0_6px_rgba(251,191,36,0.9)] animate-ping pointer-events-none">
+                      ✦
+                    </span>
+                  )}
 
                 {status === "MISS" && (
                   <img
@@ -248,9 +289,22 @@ export default function GameBoard({
                     className="w-[90%] h-[90%] object-contain opacity-80 z-20 pointer-events-none"
                   />
                 )}
+                {status === "MISS" &&
+                  cosmeticSlots.miss_effect === "miss_ripple" && (
+                    <span className="absolute inset-0 z-30 flex items-center justify-center text-lg text-cyan-200 animate-pulse pointer-events-none">
+                      ≈
+                    </span>
+                  )}
+                {recentShot?.type === "SUNK" &&
+                  recentShot.index === index &&
+                  cosmeticSlots.sunk_effect === "sunk_fireworks" && (
+                    <span className="absolute inset-0 z-40 flex items-center justify-center text-2xl text-amber-300 animate-ping pointer-events-none">
+                      ✹
+                    </span>
+                  )}
 
                 {/* Floating Taunt Text (Bắn đối thủ) */}
-                {recentShot && recentShot.index === index && (
+                {showTaunt && recentShot && recentShot.index === index && (
                   <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-40 pointer-events-none whitespace-nowrap animate-float-up">
                     <span
                       className={`text-[11px] font-black px-2 py-0.5 rounded-full shadow-lg border uppercase ${

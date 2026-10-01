@@ -136,6 +136,37 @@ test(
       `${serverUrl}/api/social/history`,
     );
     assert.equal(socialHistoryResponse.status, 401);
+    const walletResponse = await fetch(`${serverUrl}/api/economy/me`);
+    assert.equal(walletResponse.status, 401);
+    const purchaseResponse = await fetch(`${serverUrl}/api/economy/purchase`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ itemId: "frame_neon" }),
+    });
+    assert.equal(purchaseResponse.status, 401);
+    const economyConfigResponse = await fetch(
+      `${serverUrl}/api/economy/config`,
+    );
+    assert.equal(economyConfigResponse.status, 200);
+    const economyConfig = await economyConfigResponse.json();
+    assert.equal(economyConfig.packages.length, 3);
+    assert.equal(economyConfig.packages[0].amountVnd, 10_000);
+    const unauthenticatedWebhook = await fetch(
+      `${serverUrl}/api/economy/webhook/sepay`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Apikey invalid-key",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: 1,
+          transferType: "in",
+          transferAmount: 10000,
+        }),
+      },
+    );
+    assert.ok([401, 503].includes(unauthenticatedWebhook.status));
 
     const [one, two] = await Promise.all([
       connectPlayer("one"),

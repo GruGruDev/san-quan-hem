@@ -10,6 +10,7 @@ export default function LobbyScreen({
   onOpenAuth,
   onOpenDonate,
   onOpenPrivateRoom,
+  onOpenCommunity,
   currentUser,
   onLogout,
   connectionError,
@@ -179,6 +180,16 @@ export default function LobbyScreen({
                 className="w-full py-3 bg-slate-900/90 hover:bg-slate-800 border border-amber-500/40 text-amber-300 font-black rounded-2xl text-xs uppercase tracking-wider shadow-lg backdrop-blur-md transition active:scale-95 flex items-center justify-center gap-2"
               >
                 <span>🔑</span> ĐĂNG NHẬP / ĐĂNG KÝ
+              </button>
+            )}
+
+            {currentUser && (
+              <button
+                type="button"
+                onClick={onOpenCommunity}
+                className="w-full border border-amber-500/40 bg-slate-950/80 px-3 py-2.5 text-xs font-black text-amber-200 transition hover:bg-amber-950/60"
+              >
+                👥 HỒ SƠ · BẠN BÈ · LỊCH SỬ
               </button>
             )}
 

@@ -18,6 +18,7 @@ import LobbyScreen from "./components/LobbyScreen";
 import ResultScreen from "./components/ResultScreen";
 import RoomRoster from "./components/RoomRoster";
 import SearchingScreen from "./components/SearchingScreen";
+import SocialHub from "./components/SocialHub";
 
 // Import Modals
 import AuthModal from "./components/Modals/AuthModal";
@@ -158,6 +159,7 @@ export default function App() {
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showDonateModal, setShowDonateModal] = useState(false);
   const [showPrivateModal, setShowPrivateModal] = useState(false);
+  const [showSocialHub, setShowSocialHub] = useState(false);
   const [createdRoomCode, setCreatedRoomCode] = useState(null);
 
   const getToken = () => localStorage.getItem("token");
@@ -322,6 +324,7 @@ export default function App() {
       setTeam(data.team);
       setGameState("SETUP");
       setSearching(false);
+      setShowSocialHub(false);
       setShowPrivateModal(false);
       setCreatedRoomCode(null);
       setMessages([{ sender: "Hệ thống", text: data.message }]);
@@ -879,6 +882,7 @@ export default function App() {
                 playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
                 setShowDonateModal(true);
               }}
+              onOpenCommunity={() => setShowSocialHub(true)}
               onOpenPrivateRoom={() => {
                 playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
                 setShowPrivateModal(true);
@@ -1077,6 +1081,16 @@ export default function App() {
         )}
 
         {/* CÁC MODALS CỦA GAME */}
+        <SocialHub
+          isOpen={showSocialHub}
+          onClose={() => setShowSocialHub(false)}
+          currentUser={currentUser}
+          onUserUpdate={(user) => {
+            setCurrentUser(user);
+            refreshSocketAuth();
+          }}
+          socket={socket}
+        />
         <SettingsModal
           isOpen={showSettings}
           onClose={() => setShowSettings(false)}

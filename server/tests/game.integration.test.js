@@ -132,6 +132,10 @@ test(
       `${serverUrl}/api/admin/overview`,
     );
     assert.equal(adminOverviewResponse.status, 401);
+    const socialHistoryResponse = await fetch(
+      `${serverUrl}/api/social/history`,
+    );
+    assert.equal(socialHistoryResponse.status, 401);
 
     const [one, two] = await Promise.all([
       connectPlayer("one"),
@@ -199,6 +203,7 @@ test(
     );
     assert.equal(gameOver.winnerBoards.length, 1);
     assert.equal(gameOver.winnerBoards[0].board.length, oneMatch.gridSize ** 2);
+    assert.equal(gameOver.shots.length, gameOverIndices.length + 2);
     assert.equal(
       gameOver.winnerBoards[0].board.filter((cell) => cell?.shopId).length,
       9,

@@ -16,7 +16,12 @@ const GameMatch = require("./models/GameMatch");
 const AdminAuditLog = require("./models/AdminAuditLog");
 const GameReport = require("./models/GameReport");
 const GameSettings = require("./models/GameSettings");
+const Friendship = require("./models/Friendship");
+const DirectMessage = require("./models/DirectMessage");
+const ProfileReaction = require("./models/ProfileReaction");
+const GameChallenge = require("./models/GameChallenge");
 const createAdminRouter = require("./adminRouter");
+const createSocialRouter = require("./socialRouter");
 
 // --- BÍ MẬT LẤY TỪ BIẾN MÔI TRƯỜNG (.env / Render Dashboard) ---
 const { MONGO_URI, JWT_SECRET } = process.env;
@@ -493,6 +498,7 @@ const getOrCreateOAuthUser = async (provider, profile) => {
 
 const oauthUserPayload = (user) => ({
   id: user._id,
+  username: user.username,
   displayName: user.displayName,
   wins: user.wins,
   matches: user.matches,
@@ -716,6 +722,7 @@ app.post("/api/register", authLimiter, async (req, res) => {
       token,
       user: {
         id: newUser._id,
+        username: newUser.username,
         displayName: newUser.displayName,
         wins: newUser.wins,
         matches: newUser.matches,
@@ -779,6 +786,7 @@ app.post("/api/login", authLimiter, async (req, res) => {
       token,
       user: {
         id: user._id,
+        username: user.username,
         displayName: user.displayName,
         wins: user.wins,
         matches: user.matches,
@@ -1338,6 +1346,7 @@ const createGameRoom = (roomId, mode, players, options = {}) => {
     gridSize: settings.gridSize,
     playerCount: settings.playerCount,
     players,
+    shotLog: [],
     shops: selectRandomShops(settings.mode),
     gameState: options.waiting ? "WAITING_FRIEND" : "SETUP",
     turn: null,
@@ -1474,6 +1483,7 @@ const broadcastGameOver = async (room, winnerTeam) => {
   room.finishedAt = new Date();
   io.to(room.roomId).emit("game_over", {
     winnerTeam,
+    shots: room.shotLog || [],
     winnerPlayerIds: Object.values(room.players)
       .filter((player) => player.team === winnerTeam)
       .map((player) => player.socketId),
@@ -1509,6 +1519,7 @@ const broadcastGameOver = async (room, winnerTeam) => {
             shot: cell?.shot || null,
           })),
         })),
+        shots: room.shotLog || [],
       });
     } catch (err) {
       console.error("Lỗi lưu lịch sử trận:", err.message);
@@ -1548,6 +1559,18 @@ const applyShot = async (room, shooterId, targetId, targetIndex) => {
     ? null
     : getNextTurnId(room, shooterId, keepTurn);
   room.turn = nextTurnId;
+  room.shotLog ||= [];
+  room.shotLog.push({
+    sequence: room.shotLog.length + 1,
+    shooterId: shooter.userId || null,
+    shooterName: shooter.name,
+    targetId: target.userId || null,
+    targetName: target.name,
+    targetIndex,
+    result: sunkShopId ? "SUNK" : isHit ? "HIT" : "MISS",
+    shopId: sunkShopId,
+    createdAt: new Date(),
+  });
 
   io.to(room.roomId).emit("shot_result", {
     shooterId,
@@ -1612,6 +1635,7 @@ const triggerBotShot = (roomId) => {
 const resetRoomForRematch = (room) => {
   room.shops = selectRandomShops(room.mode);
   room.gameState = "SETUP";
+  room.shotLog = [];
   room.turn = null;
   room.turnOrder = [];
   room.turnIndex = 0;
@@ -1763,6 +1787,91 @@ const handleRoomDeparture = async (room, socketId) => {
     setTimeout(() => triggerBotShot(room.roomId), 1000);
   }
 };
+
+const startSocialChallengeRoom = async (challenge) => {
+  if (!matchmakingEnabled) return null;
+  const sender = challenge.senderId;
+  const recipient = challenge.recipientId;
+  const sockets = [...io.sockets.sockets.values()];
+  const senderSocket = sockets.find(
+    (socket) => socket.data.userId === String(sender._id),
+  );
+  const recipientSocket = sockets.find(
+    (socket) => socket.data.userId === String(recipient._id),
+  );
+  if (!senderSocket || !recipientSocket) return null;
+
+  const userIds = [String(sender._id), String(recipient._id)];
+  if (
+    Object.values(activeRooms).some(
+      (room) =>
+        ["SETUP", "PLAYING"].includes(room.gameState) &&
+        Object.values(room.players).some((player) =>
+          userIds.includes(String(player.userId)),
+        ),
+    )
+  ) {
+    return null;
+  }
+
+  let roomCode;
+  let roomId;
+  do {
+    roomCode = Array.from(
+      { length: 5 },
+      () => "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"[crypto.randomInt(36)],
+    ).join("");
+    roomId = `private_${roomCode}`;
+  } while (activeRooms[roomId]);
+
+  const players = {
+    [senderSocket.id]: {
+      socketId: senderSocket.id,
+      name: sender.displayName,
+      userId: String(sender._id),
+      team: "red",
+      board: [],
+      ready: false,
+      eliminated: false,
+      isBot: false,
+    },
+    [recipientSocket.id]: {
+      socketId: recipientSocket.id,
+      name: recipient.displayName,
+      userId: String(recipient._id),
+      team: "blue",
+      board: [],
+      ready: false,
+      eliminated: false,
+      isBot: false,
+    },
+  };
+  const room = createGameRoom(roomId, challenge.mode || "1v1", players, {
+    roomCode,
+    hostSocketId: senderSocket.id,
+    isPrivate: true,
+  });
+  senderSocket.join(roomId);
+  recipientSocket.join(roomId);
+  notifyMatchFound(room, "Bạn bè đã nhận lời hẹn đấu. Hãy xếp quán!");
+  return { roomId, roomCode };
+};
+
+app.use(
+  "/api/social",
+  createSocialRouter({
+    User,
+    GameMatch,
+    Friendship,
+    DirectMessage,
+    ProfileReaction,
+    GameChallenge,
+    activeRooms,
+    io,
+    requireAuthenticatedUser,
+    startChallengeRoom: startSocialChallengeRoom,
+  }),
+);
 
 // --- CHÍNH TẮC SOCKET CONNECTION SCOPE ---
 io.on("connection", (socket) => {

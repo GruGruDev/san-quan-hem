@@ -12,6 +12,18 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },
   passwordAuthEnabled: { type: Boolean, default: true },
   displayName: { type: String, required: true },
+  bio: { type: String, default: "", maxlength: 280 },
+  profileTheme: {
+    type: String,
+    enum: ["alley", "night", "market"],
+    default: "alley",
+  },
+  avatarId: {
+    type: String,
+    enum: ["scooter", "tea", "noodles"],
+    default: "scooter",
+  },
+  equippedDecoration: { type: String, default: "", maxlength: 64 },
   googleId: { type: String, unique: true, sparse: true },
   facebookId: { type: String, unique: true, sparse: true },
   tokenVersion: { type: Number, default: 0 },

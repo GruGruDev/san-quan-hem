@@ -12,6 +12,18 @@ const TOPUP_PACKAGES = [
     coinAmount: 1200,
   },
 ];
+const MIN_TOPUP_AMOUNT_VND = TOPUP_PACKAGES[0].amountVnd;
+
+const getTopupCoinAmount = (amountVnd) => {
+  let rateTier = TOPUP_PACKAGES[0];
+  for (const pack of TOPUP_PACKAGES) {
+    if (amountVnd >= pack.amountVnd) rateTier = pack;
+  }
+  return Number(
+    (BigInt(amountVnd) * BigInt(rateTier.coinAmount)) /
+      BigInt(rateTier.amountVnd),
+  );
+};
 
 const DEFAULT_STORE_ITEMS = [
   {
@@ -203,6 +215,7 @@ const createEconomyRouter = ({
   router.get("/config", (req, res) => {
     res.json({
       packages: TOPUP_PACKAGES,
+      minTopupAmountVnd: MIN_TOPUP_AMOUNT_VND,
       bank: PAYMENT_SETTINGS,
       topupsEnabled: Boolean(PAYMENT_SETTINGS.accountNumber),
       autoConfirmationEnabled: Boolean(webhookApiKey),
@@ -620,25 +633,37 @@ const createEconomyRouter = ({
     const pack = TOPUP_PACKAGES.find(
       (entry) => entry.id === req.body?.packageId,
     );
-    if (!pack)
-      return res.status(400).json({ message: "Gói nạp không hợp lệ." });
+    const isCustomTopup = req.body?.packageId === "custom";
+    const amountVnd = isCustomTopup
+      ? Number(req.body?.amountVnd)
+      : pack?.amountVnd;
+    if (
+      (!pack && !isCustomTopup) ||
+      !Number.isSafeInteger(amountVnd) ||
+      amountVnd < MIN_TOPUP_AMOUNT_VND
+    ) {
+      return res.status(400).json({
+        message: `Số tiền nạp tối thiểu là ${MIN_TOPUP_AMOUNT_VND.toLocaleString("vi-VN")} đ.`,
+      });
+    }
+    const coinAmount = pack?.coinAmount ?? getTopupCoinAmount(amountVnd);
     const orderCode = `HEM${crypto.randomBytes(5).toString("hex").toUpperCase()}`;
     const order = await PaymentOrder.create({
       orderCode,
       userId: req.authenticatedUser._id,
-      packageId: pack.id,
-      amountVnd: pack.amountVnd,
-      coinAmount: pack.coinAmount,
+      packageId: pack?.id || "custom",
+      amountVnd,
+      coinAmount,
       provider: webhookApiKey ? "sepay" : "manual",
       expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     });
     const accountName = encodeURIComponent(PAYMENT_SETTINGS.accountName);
-    const qrUrl = `https://img.vietqr.io/image/${PAYMENT_SETTINGS.bankCode}-${PAYMENT_SETTINGS.accountNumber}-compact2.png?amount=${pack.amountVnd}&addInfo=${orderCode}&accountName=${accountName}`;
+    const qrUrl = `https://img.vietqr.io/image/${PAYMENT_SETTINGS.bankCode}-${PAYMENT_SETTINGS.accountNumber}-compact2.png?amount=${amountVnd}&addInfo=${orderCode}&accountName=${accountName}`;
     res.status(201).json({
       orderId: order.id,
       orderCode,
-      amountVnd: pack.amountVnd,
-      coinAmount: pack.coinAmount,
+      amountVnd,
+      coinAmount,
       expiresAt: order.expiresAt,
       status: order.status,
       bank: PAYMENT_SETTINGS,
@@ -676,5 +701,7 @@ module.exports = {
   createEconomyRouter,
   seedStoreCatalog,
   TOPUP_PACKAGES,
+  MIN_TOPUP_AMOUNT_VND,
+  getTopupCoinAmount,
   DEFAULT_STORE_ITEMS,
 };

@@ -41,6 +41,17 @@ async function economyRequest(path, token, options = {}) {
 const formatVnd = (amount) =>
   `${Number(amount || 0).toLocaleString("vi-VN")} đ`;
 const getToken = () => localStorage.getItem("token");
+const estimateTopupCoins = (amountVnd, packages) => {
+  let rateTier = packages[0];
+  for (const pack of packages) {
+    if (amountVnd >= pack.amountVnd) rateTier = pack;
+  }
+  if (!rateTier) return 0;
+  return Number(
+    (BigInt(amountVnd) * BigInt(rateTier.coinAmount)) /
+      BigInt(rateTier.amountVnd),
+  );
+};
 
 export default function EconomyShop({
   isOpen,
@@ -58,6 +69,7 @@ export default function EconomyShop({
   const [orders, setOrders] = useState([]);
   const [achievements, setAchievements] = useState([]);
   const [activeOrder, setActiveOrder] = useState(null);
+  const [customTopupAmount, setCustomTopupAmount] = useState("10000");
   const [dailyRewardAvailable, setDailyRewardAvailable] = useState(false);
   const [busyItem, setBusyItem] = useState("");
   const [notice, setNotice] = useState("");
@@ -106,6 +118,15 @@ export default function EconomyShop({
           hemCoinBalance: account.hemCoinBalance || 0,
         });
         setOrders(paymentOrders || []);
+        setActiveOrder((currentOrder) => {
+          if (!currentOrder) return currentOrder;
+          const refreshedOrder = paymentOrders.find(
+            (order) => order.orderCode === currentOrder.orderCode,
+          );
+          return refreshedOrder
+            ? { ...currentOrder, ...refreshedOrder }
+            : currentOrder;
+        });
       } catch {
         // A missed refresh is harmless; the player can retry manually.
       }
@@ -117,6 +138,14 @@ export default function EconomyShop({
 
   const owned = new Set(inventory.map((item) => item.itemId));
   const equipped = new Set(equippedCosmetics.map((item) => item.itemId));
+  const activeOrderStatus = activeOrder?.status || "pending";
+  const customAmountVnd = Number(customTopupAmount);
+  const customCoinEstimate =
+    config &&
+    Number.isSafeInteger(customAmountVnd) &&
+    customAmountVnd >= config.minTopupAmountVnd
+      ? estimateTopupCoins(customAmountVnd, config.packages)
+      : 0;
   const visibleItems = items.filter(
     (item) => category === "all" || item.category === category,
   );
@@ -181,11 +210,13 @@ export default function EconomyShop({
       setNotice(`Đã nhận ${result.reward} Xu Hẻm.`);
     });
 
-  const createTopup = (packageId) =>
+  const createTopup = (packageId, amountVnd) =>
     runAction(packageId, async () => {
       const order = await economyRequest("/topups", getToken(), {
         method: "POST",
-        body: JSON.stringify({ packageId }),
+        body: JSON.stringify(
+          packageId === "custom" ? { packageId, amountVnd } : { packageId },
+        ),
       });
       setActiveOrder(order);
       setTab("topup");
@@ -413,7 +444,13 @@ export default function EconomyShop({
                       </div>
                       <div>
                         <div className="text-[10px] font-black uppercase text-cyan-200">
-                          Đơn nạp đang chờ
+                          {activeOrderStatus === "credited"
+                            ? "Đã cộng Hẻm Coin"
+                            : activeOrderStatus === "expired"
+                              ? "Đơn nạp đã hết hạn"
+                              : activeOrderStatus === "rejected"
+                                ? "Đơn nạp bị từ chối"
+                                : "Đơn nạp đang chờ"}
                         </div>
                         <div className="mt-2 text-2xl font-black text-cyan-100">
                           {activeOrder.coinAmount} 💎
@@ -447,9 +484,19 @@ export default function EconomyShop({
                             </dd>
                           </div>
                         </dl>
-                        <p className="mt-3 text-[10px] leading-relaxed text-slate-500">
-                          Coin chỉ vào ví sau khi giao dịch được xác nhận. Nếu
-                          webhook chưa cấu hình, admin sẽ duyệt thủ công.
+                        <p
+                          aria-live="polite"
+                          className={`mt-3 text-[10px] leading-relaxed ${activeOrderStatus === "credited" ? "text-emerald-300" : activeOrderStatus === "rejected" ? "text-rose-300" : "text-slate-400"}`}
+                        >
+                          {activeOrderStatus === "credited"
+                            ? "Giao dịch đã được xác nhận. Hẻm Coin đã cộng vào ví."
+                            : activeOrderStatus === "expired"
+                              ? "Đơn đã hết hạn. Vui lòng tạo đơn mới; không chuyển khoản theo mã đơn này."
+                              : activeOrderStatus === "rejected"
+                                ? "Đơn bị từ chối. Nếu bạn đã chuyển khoản, vui lòng liên hệ admin để được kiểm tra."
+                                : activeOrder.autoConfirmationEnabled
+                                  ? "Đang chờ SePay xác nhận giao dịch. Nếu đã chuyển khoản mà quá vài phút chưa cập nhật, admin sẽ kiểm tra thủ công."
+                                  : "Đang chờ admin xác nhận đã nhận tiền. Hẻm Coin sẽ được cộng sau khi admin duyệt."}
                         </p>
                         <button
                           type="button"
@@ -464,35 +511,79 @@ export default function EconomyShop({
                       </div>
                     </div>
                   ) : (
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      {(config?.packages || []).map((pack) => (
-                        <article
-                          key={pack.id}
-                          className="border border-slate-800 bg-slate-900/70 p-4"
+                    <>
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        {(config?.packages || []).map((pack) => (
+                          <article
+                            key={pack.id}
+                            className="border border-slate-800 bg-slate-900/70 p-4"
+                          >
+                            <div className="text-[10px] font-black uppercase text-slate-400">
+                              {pack.label}
+                            </div>
+                            <div className="mt-3 text-2xl font-black text-cyan-100">
+                              {pack.coinAmount} 💎
+                            </div>
+                            <div className="mt-1 text-xs text-slate-400">
+                              {formatVnd(pack.amountVnd)}
+                            </div>
+                            <div className="mt-4 text-[9px] text-slate-600">
+                              Tỷ lệ quy đổi hiển thị trước khi thanh toán.
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => createTopup(pack.id)}
+                              disabled={busyItem === pack.id}
+                              className="mt-4 w-full bg-cyan-300 px-3 py-2.5 text-xs font-black text-slate-950 disabled:opacity-50"
+                            >
+                              Tạo QR nạp
+                            </button>
+                          </article>
+                        ))}
+                      </div>
+                      <div className="mt-4 border border-cyan-500/30 bg-slate-900/70 p-4">
+                        <label
+                          htmlFor="custom-topup-amount"
+                          className="text-xs font-black uppercase text-cyan-100"
                         >
-                          <div className="text-[10px] font-black uppercase text-slate-400">
-                            {pack.label}
-                          </div>
-                          <div className="mt-3 text-2xl font-black text-cyan-100">
-                            {pack.coinAmount} 💎
-                          </div>
-                          <div className="mt-1 text-xs text-slate-400">
-                            {formatVnd(pack.amountVnd)}
-                          </div>
-                          <div className="mt-4 text-[9px] text-slate-600">
-                            Tỷ lệ quy đổi hiển thị trước khi thanh toán.
+                          Nạp số tiền tùy chọn
+                        </label>
+                        <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
+                          <input
+                            id="custom-topup-amount"
+                            type="number"
+                            min={config?.minTopupAmountVnd || 10000}
+                            step="1000"
+                            inputMode="numeric"
+                            value={customTopupAmount}
+                            onChange={(event) =>
+                              setCustomTopupAmount(event.target.value)
+                            }
+                            className="min-w-0 border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+                          />
+                          <div className="text-sm font-bold text-cyan-100">
+                            {customCoinEstimate.toLocaleString("vi-VN")} 💎
                           </div>
                           <button
                             type="button"
-                            onClick={() => createTopup(pack.id)}
-                            disabled={busyItem === pack.id}
-                            className="mt-4 w-full bg-cyan-300 px-3 py-2.5 text-xs font-black text-slate-950 disabled:opacity-50"
+                            onClick={() =>
+                              createTopup("custom", customAmountVnd)
+                            }
+                            disabled={
+                              busyItem === "custom" || customCoinEstimate < 1
+                            }
+                            className="bg-cyan-300 px-4 py-2.5 text-xs font-black text-slate-950 disabled:opacity-50"
                           >
                             Tạo QR nạp
                           </button>
-                        </article>
-                      ))}
-                    </div>
+                        </div>
+                        <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
+                          Tối thiểu {formatVnd(config?.minTopupAmountVnd)}. Tỷ
+                          giá tăng theo các mốc gói nạp; Coin được làm tròn
+                          xuống.
+                        </p>
+                      </div>
+                    </>
                   )}
                   <p className="mt-4 text-[10px] text-slate-500">
                     Gói đã tạo có hiệu lực 60 phút. Không chuyển khoản nếu đơn

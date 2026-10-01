@@ -12,6 +12,11 @@ const { rateLimit } = require("express-rate-limit");
 const nodemailer = require("nodemailer");
 const User = require("./models/User");
 const OAuthFlow = require("./models/OAuthFlow");
+const GameMatch = require("./models/GameMatch");
+const AdminAuditLog = require("./models/AdminAuditLog");
+const GameReport = require("./models/GameReport");
+const GameSettings = require("./models/GameSettings");
+const createAdminRouter = require("./adminRouter");
 
 // --- BÍ MẬT LẤY TỪ BIẾN MÔI TRƯỜNG (.env / Render Dashboard) ---
 const { MONGO_URI, JWT_SECRET } = process.env;
@@ -201,6 +206,8 @@ const passwordChangeLimiter = rateLimit({
   message: { message: "Quá nhiều lần đổi mật khẩu. Vui lòng thử lại sau." },
 });
 
+let matchmakingEnabled = true;
+
 const requireAuthenticatedUser = async (req, res, next) => {
   const authorization = req.get("authorization") || "";
   const [scheme, token] = authorization.split(/\s+/, 2);
@@ -218,6 +225,9 @@ const requireAuthenticatedUser = async (req, res, next) => {
     if (!user || (payload.tokenVersion || 0) !== (user.tokenVersion || 0)) {
       return res.status(401).json({ message: "Vui lòng đăng nhập lại." });
     }
+    if (user.isBanned) {
+      return res.status(403).json({ message: "Tài khoản đã bị tạm khóa." });
+    }
 
     req.authenticatedUser = user;
     return next();
@@ -226,10 +236,81 @@ const requireAuthenticatedUser = async (req, res, next) => {
   }
 };
 
+const ADMIN_USERNAMES = new Set(
+  (process.env.ADMIN_USERNAMES || "")
+    .split(",")
+    .map((username) => username.trim().toLowerCase())
+    .filter(Boolean),
+);
+
+const requireAdmin = (req, res, next) =>
+  requireAuthenticatedUser(req, res, () => {
+    if (!ADMIN_USERNAMES.size) {
+      return res
+        .status(503)
+        .json({ message: "Chưa cấu hình tài khoản quản trị." });
+    }
+    if (!ADMIN_USERNAMES.has(req.authenticatedUser.username.toLowerCase())) {
+      return res.status(403).json({ message: "Bạn không có quyền quản trị." });
+    }
+    return next();
+  });
+
+app.get("/api/admin/session", requireAdmin, (req, res) => {
+  res.json({
+    id: req.authenticatedUser._id,
+    displayName: req.authenticatedUser.displayName,
+    username: req.authenticatedUser.username,
+  });
+});
+
+app.get("/api/announcements", async (req, res) => {
+  if (mongoose.connection.readyState !== 1)
+    return res.json({ announcement: "" });
+  try {
+    const settings = await GameSettings.findOne({ key: "global" })
+      .select("announcement")
+      .lean();
+    res.json({ announcement: settings?.announcement || "" });
+  } catch {
+    res.json({ announcement: "" });
+  }
+});
+
+app.post("/api/reports", requireAuthenticatedUser, async (req, res) => {
+  const { matchId, reportedPlayer = "", reason } = req.body || {};
+  if (
+    typeof matchId !== "string" ||
+    !matchId.trim() ||
+    typeof reason !== "string" ||
+    !reason.trim() ||
+    reason.length > 1000 ||
+    typeof reportedPlayer !== "string" ||
+    reportedPlayer.length > 64
+  ) {
+    return res.status(400).json({ message: "Thông tin báo cáo không hợp lệ." });
+  }
+  if (mongoose.connection.readyState !== 1) {
+    return res.status(503).json({ message: "Cơ sở dữ liệu chưa sẵn sàng." });
+  }
+  const report = await GameReport.create({
+    matchId: matchId.trim(),
+    reporterId: req.authenticatedUser._id,
+    reporterName: req.authenticatedUser.displayName,
+    reportedPlayer: reportedPlayer.trim(),
+    reason: reason.trim(),
+  });
+  res.status(201).json({ id: report.id, status: report.status });
+});
+
 // --- KẾT NỐI MONGODB ATLAS CLOUD ---
 mongoose
   .connect(MONGO_URI)
-  .then(() => console.log("✅ Đã kết nối MongoDB Atlas Cloud thành công!"))
+  .then(async () => {
+    console.log("✅ Đã kết nối MongoDB Atlas Cloud thành công!");
+    const settings = await GameSettings.findOne({ key: "global" }).lean();
+    if (settings) matchmakingEnabled = settings.matchmakingEnabled !== false;
+  })
   .catch((err) => console.error("❌ Lỗi kết nối MongoDB Atlas:", err.message));
 
 const OAUTH_PROVIDERS = new Set(["google", "facebook"]);
@@ -415,6 +496,7 @@ const oauthUserPayload = (user) => ({
   displayName: user.displayName,
   wins: user.wins,
   matches: user.matches,
+  isDonor: Boolean(user.isDonor),
 });
 
 const oauthFlowLimiter = rateLimit({
@@ -558,6 +640,9 @@ app.post("/api/auth/exchange", oauthFlowLimiter, async (req, res) => {
     const user = await User.findById(flow.userId);
     if (!user)
       return res.status(400).json({ message: "Tài khoản không tồn tại." });
+    if (user.isBanned) {
+      return res.status(403).json({ message: "Tài khoản đã bị tạm khóa." });
+    }
 
     const token = jwt.sign(
       {
@@ -634,6 +719,7 @@ app.post("/api/register", authLimiter, async (req, res) => {
         displayName: newUser.displayName,
         wins: newUser.wins,
         matches: newUser.matches,
+        isDonor: Boolean(newUser.isDonor),
       },
     });
   } catch (err) {
@@ -676,6 +762,9 @@ app.post("/api/login", authLimiter, async (req, res) => {
         .status(400)
         .json({ message: "Tài khoản hoặc mật khẩu không đúng!" });
     }
+    if (user.isBanned) {
+      return res.status(403).json({ message: "Tài khoản đã bị tạm khóa." });
+    }
 
     const token = jwt.sign(
       {
@@ -693,6 +782,7 @@ app.post("/api/login", authLimiter, async (req, res) => {
         displayName: user.displayName,
         wins: user.wins,
         matches: user.matches,
+        isDonor: Boolean(user.isDonor),
       },
     });
   } catch (err) {
@@ -988,14 +1078,25 @@ app.get("/api/leaderboard", async (req, res) => {
   try {
     if (mongoose.connection.readyState !== 1) return res.json([]);
     const weekly = req.query.period === "week";
+    const donors = req.query.period === "donors";
     const topUsers = await User.find(
-      weekly ? { weeklyWeekStart: getUtcWeekStart() } : {},
+      donors
+        ? { isDonor: true }
+        : weekly
+          ? { weeklyWeekStart: getUtcWeekStart() }
+          : {},
     )
-      .select("displayName wins matches weeklyWins weeklyMatches")
+      .select(
+        donors
+          ? "displayName donorSince"
+          : "displayName wins matches weeklyWins weeklyMatches isDonor",
+      )
       .sort(
-        weekly
-          ? { weeklyWins: -1, weeklyMatches: 1 }
-          : { wins: -1, matches: 1 },
+        donors
+          ? { donorSince: 1, createdAt: 1 }
+          : weekly
+            ? { weeklyWins: -1, weeklyMatches: 1 }
+            : { wins: -1, matches: 1 },
       )
       .limit(10);
     res.json(
@@ -1033,14 +1134,19 @@ io.use(async (socket, next) => {
       return next(new Error("Token tài khoản không hợp lệ."));
     }
 
-    const user = await User.findById(payload.userId).select("tokenVersion");
+    const user = await User.findById(payload.userId).select(
+      "tokenVersion isBanned username displayName",
+    );
     if (!user || (payload.tokenVersion || 0) !== (user.tokenVersion || 0)) {
       return next(
         new Error("Phiên đăng nhập đã bị thu hồi. Vui lòng đăng nhập lại."),
       );
     }
+    if (user.isBanned) return next(new Error("Tài khoản đã bị tạm khóa."));
 
     socket.data.userId = user._id.toString();
+    socket.data.username = user.username;
+    socket.data.displayName = user.displayName;
     next();
   } catch {
     next(new Error("Phiên đăng nhập không hợp lệ hoặc đã hết hạn."));
@@ -1058,6 +1164,24 @@ const isSocketPayload = (value) =>
 const matchmakingQueues = { "1v1": [], "2v2": [] };
 const searchTimers = new Map();
 const activeRooms = {};
+
+app.use(
+  "/api/admin",
+  createAdminRouter({
+    User,
+    GameMatch,
+    GameReport,
+    GameSettings,
+    AdminAuditLog,
+    activeRooms,
+    matchmakingQueues,
+    io,
+    requireAdmin,
+    onSettingsUpdated: (settings) => {
+      matchmakingEnabled = settings.matchmakingEnabled !== false;
+    },
+  }),
+);
 
 const getModeSettings = (mode = "1v1") =>
   mode === "2v2"
@@ -1313,6 +1437,8 @@ const startRoomIfReady = (room) => {
   }
 
   room.gameState = "PLAYING";
+  room.gameId = crypto.randomUUID();
+  room.startedAt = new Date();
   room.turnOrder = getTurnOrder(room);
   room.turnIndex = 0;
   room.turn = room.turnOrder[room.turnIndex];
@@ -1320,6 +1446,7 @@ const startRoomIfReady = (room) => {
     firstTurnId: room.turn,
     firstTeam: room.players[room.turn]?.team,
     turnOrder: room.turnOrder,
+    gameId: room.gameId,
   });
   return true;
 };
@@ -1344,12 +1471,49 @@ const updateFinishedGameStats = async (room, winnerTeam) => {
 
 const broadcastGameOver = async (room, winnerTeam) => {
   room.gameState = "FINISHED";
+  room.finishedAt = new Date();
   io.to(room.roomId).emit("game_over", {
     winnerTeam,
     winnerPlayerIds: Object.values(room.players)
       .filter((player) => player.team === winnerTeam)
       .map((player) => player.socketId),
+    winnerBoards: Object.values(room.players)
+      .filter((player) => player.team === winnerTeam)
+      .map((player) => ({
+        name: player.name,
+        board: player.board.map((cell) =>
+          cell
+            ? { shopId: cell.shopId || null, shot: cell.shot || null }
+            : null,
+        ),
+      })),
   });
+  if (mongoose.connection.readyState === 1) {
+    try {
+      await GameMatch.create({
+        gameId: room.gameId || crypto.randomUUID(),
+        roomId: room.roomId,
+        mode: room.mode,
+        gridSize: room.gridSize,
+        winnerTeam,
+        shops: room.shops,
+        startedAt: room.startedAt || room.finishedAt,
+        finishedAt: room.finishedAt,
+        players: Object.values(room.players).map((player) => ({
+          userId: player.userId || null,
+          name: player.name,
+          team: player.team,
+          board: (player.board || []).map((cell, index) => ({
+            index,
+            shopId: cell?.shopId || null,
+            shot: cell?.shot || null,
+          })),
+        })),
+      });
+    } catch (err) {
+      console.error("Lỗi lưu lịch sử trận:", err.message);
+    }
+  }
   try {
     await updateFinishedGameStats(room, winnerTeam);
   } catch (err) {
@@ -1608,6 +1772,10 @@ io.on("connection", (socket) => {
   // Tìm đối thủ ghép ngẫu nhiên
   socket.on("tim_doi_thu", (data = {}) => {
     if (!isSocketPayload(data)) return;
+    if (!matchmakingEnabled) {
+      socket.emit("opponent_left", "Ghép trận đang tạm dừng để bảo trì.");
+      return;
+    }
     const mode = data.mode === "2v2" ? "2v2" : "1v1";
     const playerName = getPlayerName(data.name);
     const userId = socket.data.userId;
@@ -1662,6 +1830,10 @@ io.on("connection", (socket) => {
   // --- CHẾ ĐỘ PHÒNG KÍN (MÃ HẺM) ---
   socket.on("create_private_room", (data = {}) => {
     if (!isSocketPayload(data)) return;
+    if (!matchmakingEnabled) {
+      socket.emit("join_private_error", "Tạo phòng đang tạm dừng để bảo trì.");
+      return;
+    }
     const playerName = getPlayerName(data.name);
     const userId = socket.data.userId;
     const mode = data.mode === "2v2" ? "2v2" : "1v1";

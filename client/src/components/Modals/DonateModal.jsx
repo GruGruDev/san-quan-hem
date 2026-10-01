@@ -18,7 +18,7 @@ export default function DonateModal({ isOpen, onClose }) {
 
         {/* Tiêu đề */}
         <div className="mt-1">
-          <div className="inline-block bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 text-slate-950 text-[10px] font-black px-3 py-0.5 rounded-full uppercase tracking-widest shadow mb-1">
+          <div className="inline-block bg-linear-to-r from-amber-500 via-yellow-400 to-amber-500 text-slate-950 text-[10px] font-black px-3 py-0.5 rounded-full uppercase tracking-widest shadow mb-1">
             Góc Đại Gia Hẻm
           </div>
           <h2 className="text-xl font-black text-amber-300 tracking-wider uppercase drop-shadow">
@@ -60,13 +60,14 @@ export default function DonateModal({ isOpen, onClose }) {
             <span>💎</span> Quyền lợi "Đại Gia Hẻm":
           </div>
           <span>• Gắn huy hiệu lấp lánh tại Sảnh Chờ.</span>
-          <span>• Tên được vinh danh trên Bảng Vàng Tác Giả.</span>
+          <span>• Tên được vinh danh trong mục Tri Ân.</span>
+          <span>• Số tiền ủng hộ không được công khai.</span>
         </div>
 
         {/* Nút Đóng */}
         <button
           onClick={onClose}
-          className="w-full bg-gradient-to-r from-amber-500 to-yellow-500 hover:brightness-110 text-slate-950 font-black py-3 rounded-xl shadow-lg active:scale-95 transition text-xs uppercase tracking-wider"
+          className="w-full bg-linear-to-r from-amber-500 to-yellow-500 hover:brightness-110 text-slate-950 font-black py-3 rounded-xl shadow-lg active:scale-95 transition text-xs uppercase tracking-wider"
         >
           CẢM ƠN BẠN RẤT NHIỀU!
         </button>

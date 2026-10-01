@@ -131,6 +131,8 @@ export default function GameBoard({
               <button
                 key={`my-${index}`}
                 onClick={() => handleSetupCellClick(index)}
+                title={`Hẻm ${String.fromCharCode(65 + Math.floor(index / boardSize))}/${(index % boardSize) + 1}`}
+                aria-label={`Hẻm ${String.fromCharCode(65 + Math.floor(index / boardSize))}, số ${(index % boardSize) + 1}`}
                 className={`
                   w-full h-full flex items-center justify-center relative border border-white/10 rounded-sm transition-all overflow-visible cursor-pointer
                   ${isPreview && isPreviewValid ? "bg-emerald-500/50 border-2 border-emerald-300" : ""}
@@ -209,6 +211,8 @@ export default function GameBoard({
               <button
                 key={`opp-${index}`}
                 onClick={() => handleOpponentCellClick(index, status)}
+                title={`Hẻm ${String.fromCharCode(65 + Math.floor(index / boardSize))}/${(index % boardSize) + 1}`}
+                aria-label={`Ngắm bắn hẻm ${String.fromCharCode(65 + Math.floor(index / boardSize))}, số ${(index % boardSize) + 1}`}
                 disabled={
                   shotPending || aimingIndex !== null || status !== null
                 }
@@ -264,6 +268,41 @@ export default function GameBoard({
               </button>
             );
           })}
+      </div>
+
+      <div
+        aria-hidden="true"
+        className="absolute grid pointer-events-none text-[9px] font-black text-amber-200 drop-shadow-[0_1px_2px_rgba(0,0,0,1)]"
+        style={{
+          top: "2%",
+          left: "8.5%",
+          right: "8.5%",
+          height: "6.5%",
+          gridTemplateColumns: `repeat(${boardSize}, minmax(0, 1fr))`,
+        }}
+      >
+        {Array.from({ length: boardSize }, (_, index) => (
+          <span key={index} className="flex items-center justify-center">
+            {index + 1}
+          </span>
+        ))}
+      </div>
+      <div
+        aria-hidden="true"
+        className="absolute grid pointer-events-none text-[9px] font-black text-amber-200 drop-shadow-[0_1px_2px_rgba(0,0,0,1)]"
+        style={{
+          top: "8.5%",
+          bottom: "8.5%",
+          left: "1%",
+          width: "7.5%",
+          gridTemplateRows: `repeat(${boardSize}, minmax(0, 1fr))`,
+        }}
+      >
+        {Array.from({ length: boardSize }, (_, index) => (
+          <span key={index} className="flex items-center justify-center">
+            {String.fromCharCode(65 + index)}
+          </span>
+        ))}
       </div>
 
       {/* 💥 VỤ NỔ TOÀN BÀN CỜ (MAP) ĐÈ LÊN MỌI THỨ KHI BẮN SẬP QUÁN */}

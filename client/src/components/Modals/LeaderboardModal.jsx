@@ -3,7 +3,7 @@ import { getPlayerRank } from "../../constants/game";
 import { apiUrl } from "../../utils/api";
 
 export default function LeaderboardModal({ isOpen, onClose }) {
-  const [tab, setTab] = useState("ALL_TIME"); // ALL_TIME | WEEKLY
+  const [tab, setTab] = useState("ALL_TIME"); // ALL_TIME | WEEKLY | DONORS
   const [leaderboardState, setLeaderboardState] = useState({
     tab: null,
     data: [],
@@ -17,7 +17,12 @@ export default function LeaderboardModal({ isOpen, onClose }) {
     if (!isOpen) return;
 
     const controller = new AbortController();
-    const period = tab === "WEEKLY" ? "?period=week" : "";
+    const period =
+      tab === "WEEKLY"
+        ? "?period=week"
+        : tab === "DONORS"
+          ? "?period=donors"
+          : "";
     fetch(apiUrl(`/api/leaderboard${period}`), { signal: controller.signal })
       .then((res) => {
         if (!res.ok) throw new Error("Leaderboard request failed");
@@ -63,7 +68,7 @@ export default function LeaderboardModal({ isOpen, onClose }) {
         </div>
 
         {/* Tab Chuyển Đổi */}
-        <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 gap-1">
+        <div className="grid grid-cols-3 bg-slate-950 p-1 rounded-xl border border-slate-800 gap-1">
           <button
             onClick={() => setTab("ALL_TIME")}
             className={`flex-1 py-1.5 text-xs font-black rounded-lg transition ${
@@ -84,6 +89,16 @@ export default function LeaderboardModal({ isOpen, onClose }) {
           >
             ⭐ Đua Top Tuần
           </button>
+          <button
+            onClick={() => setTab("DONORS")}
+            className={`flex-1 py-1.5 text-xs font-black rounded-lg transition ${
+              tab === "DONORS"
+                ? "bg-amber-500 text-slate-950 shadow"
+                : "text-slate-400 hover:text-amber-200"
+            }`}
+          >
+            ✨ Tri Ân
+          </button>
         </div>
 
         {/* Danh Sách BXH */}
@@ -101,15 +116,37 @@ export default function LeaderboardModal({ isOpen, onClose }) {
                 <span>Không tải được bảng xếp hạng. Vui lòng thử lại.</span>
               ) : (
                 <>
-                  <span>🛵 Chưa có dữ liệu cao thủ!</span>
+                  <span>
+                    {tab === "DONORS"
+                      ? "Chưa có tên nào trong sổ tri ân."
+                      : "🛵 Chưa có dữ liệu cao thủ!"}
+                  </span>
                   <span className="text-[10px] opacity-70">
-                    Hãy là người đầu tiên thắng trận!
+                    {tab === "DONORS"
+                      ? "Cảm ơn mọi người đã đồng hành cùng dự án."
+                      : "Hãy là người đầu tiên thắng trận!"}
                   </span>
                 </>
               )}
             </div>
           ) : (
             leaderboardData.map((item, index) => {
+              if (tab === "DONORS") {
+                return (
+                  <div
+                    key={item._id || item.id || index}
+                    className="flex items-center gap-3 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2.5"
+                  >
+                    <span className="text-lg" aria-hidden="true">
+                      ✨
+                    </span>
+                    <span className="text-sm font-black text-amber-100">
+                      {item.displayName || "Người bạn của dự án"}
+                    </span>
+                  </div>
+                );
+              }
+
               const isTop1 = index === 0;
               const isTop2 = index === 1;
               const isTop3 = index === 2;
@@ -160,6 +197,9 @@ export default function LeaderboardModal({ isOpen, onClose }) {
                     <div className="flex flex-col text-left">
                       <span className="text-xs font-black text-amber-100 tracking-wide flex items-center gap-1">
                         {item.displayName || item.name || "Phượt Thủ"}
+                        {item.isDonor && (
+                          <span title="Người ủng hộ Săn Quán Hẻm">✨</span>
+                        )}
                         <span className="text-xs">{rankInfo.icon}</span>
                       </span>
                       <span

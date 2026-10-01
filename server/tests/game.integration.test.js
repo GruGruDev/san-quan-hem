@@ -126,6 +126,13 @@ test(
 
     await waitForServer();
 
+    const adminSessionResponse = await fetch(`${serverUrl}/api/admin/session`);
+    assert.equal(adminSessionResponse.status, 401);
+    const adminOverviewResponse = await fetch(
+      `${serverUrl}/api/admin/overview`,
+    );
+    assert.equal(adminOverviewResponse.status, 401);
+
     const [one, two] = await Promise.all([
       connectPlayer("one"),
       connectPlayer("two"),
@@ -140,6 +147,7 @@ test(
     assert.equal(twoMatch.roomId, oneMatch.roomId);
 
     const firstGame = await setUpMatch([one, two], oneMatch);
+    assert.ok(firstGame.gameId);
     const shooter = firstGame.firstTurnId === one.id ? one : two;
     const defender = shooter === one ? two : one;
     const hitEvents = [
@@ -167,6 +175,34 @@ test(
     const missResult = await missEvents[0];
     assert.equal(missResult.isHit, false);
     assert.equal(missResult.nextTurnId, defender.id);
+
+    const gameOverIndices = [0, 1, 8, 9, 10, 16, 17, 18, 19];
+    let gameOver;
+    for (const [index, targetIndex] of gameOverIndices.entries()) {
+      const shotEvent = waitForEvent(one, "shot_result");
+      const gameOverEvent =
+        index === gameOverIndices.length - 1
+          ? waitForEvent(one, "game_over")
+          : null;
+      defender.emit("fire_shot", {
+        roomId: oneMatch.roomId,
+        targetSocketId: shooter.id,
+        targetIndex,
+      });
+      const result = await shotEvent;
+      assert.equal(result.isHit, true);
+      if (gameOverEvent) gameOver = await gameOverEvent;
+    }
+    assert.equal(
+      gameOver.winnerTeam,
+      oneMatch.players.find((player) => player.socketId === defender.id).team,
+    );
+    assert.equal(gameOver.winnerBoards.length, 1);
+    assert.equal(gameOver.winnerBoards[0].board.length, oneMatch.gridSize ** 2);
+    assert.equal(
+      gameOver.winnerBoards[0].board.filter((cell) => cell?.shopId).length,
+      9,
+    );
 
     const teamPlayers = await Promise.all([
       connectPlayer("red-one"),

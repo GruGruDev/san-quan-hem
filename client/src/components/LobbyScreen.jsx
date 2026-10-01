@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { APP_VERSION, getPlayerRank } from "../constants/game";
+import { apiUrl } from "../utils/api";
 
 export default function LobbyScreen({
   onFindMatch,
@@ -15,6 +16,16 @@ export default function LobbyScreen({
 }) {
   const [nameInput, setNameInput] = useState("");
   const [selectedMode, setSelectedMode] = useState("1v1");
+  const [announcement, setAnnouncement] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(apiUrl("/api/announcements"), { signal: controller.signal })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => setAnnouncement(data?.announcement || ""))
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
 
   const userWins = currentUser?.wins || 0;
   const userRank = getPlayerRank(userWins);
@@ -89,6 +100,15 @@ export default function LobbyScreen({
           </div>
         </div>
 
+        {announcement && (
+          <div
+            role="status"
+            className="relative z-10 mx-4 border-l-2 border-amber-300 bg-slate-950/85 px-3 py-2 text-left text-xs font-bold text-amber-100 shadow-lg"
+          >
+            {announcement}
+          </div>
+        )}
+
         {/* NỘI DUNG SẢNH CHỜ */}
         <div className="relative z-10 flex-1 p-5 flex flex-col items-center justify-between text-center">
           {/* Bảng Đèn Cổ Động Trận Đấu */}
@@ -126,8 +146,17 @@ export default function LobbyScreen({
                     {userRank.icon}
                   </div>
                   <div className="flex flex-col text-left">
-                    <span className="text-xs font-black text-amber-100">
+                    <span className="flex items-center gap-1 text-xs font-black text-amber-100">
                       {currentUser.displayName}
+                      {currentUser.isDonor && (
+                        <span
+                          className="animate-pulse text-amber-300 drop-shadow-[0_0_6px_rgba(253,224,71,0.9)]"
+                          title="Người ủng hộ Săn Quán Hẻm"
+                          aria-label="Người ủng hộ Săn Quán Hẻm"
+                        >
+                          ✨
+                        </span>
+                      )}
                     </span>
                     <span
                       className={`text-[10px] font-black uppercase tracking-wider ${userRank.color}`}

@@ -148,6 +148,8 @@ export default function App() {
   const [recentShot, setRecentShot] = useState(null);
   const [opponentAimingIndex, setOpponentAimingIndex] = useState(null);
   const [winner, setWinner] = useState(null);
+  const [winnerBoards, setWinnerBoards] = useState([]);
+  const [gameId, setGameId] = useState(null);
   const [turnTimeLeft, setTurnTimeLeft] = useState(25);
 
   const [messages, setMessages] = useState([]);
@@ -245,11 +247,17 @@ export default function App() {
     if (gameState === "LOBBY") {
       playBGM("lofi.mp3", soundEnabled, bgmVolume);
     } else if (gameState === "SETUP" || gameState === "PLAYING") {
-      playBGM("acousticstreet.mp3", soundEnabled, bgmVolume);
+      playBGM("soundstreet.mp3", soundEnabled, bgmVolume);
     } else if (gameState === "FINISHED") {
       stopBGM();
     }
   }, [gameState, soundEnabled, bgmVolume]);
+
+  useEffect(() => {
+    if (gameState === "PLAYING" && turnTimeLeft === 5) {
+      playSFX("TurnTimer.mp3", soundEnabled, sfxVolume);
+    }
+  }, [gameState, turnTimeLeft, soundEnabled, sfxVolume]);
 
   useEffect(() => {
     let timer = null;
@@ -283,6 +291,8 @@ export default function App() {
     setCoinFlipResult(null);
     setRecentShot(null);
     setWinner(null);
+    setWinnerBoards([]);
+    setGameId(null);
     setTurnTimeLeft(25);
     setOpponentAimingIndex(null);
     setSelectedTargetId(null);
@@ -382,6 +392,7 @@ export default function App() {
     socket.on("start_coin_flip", (data) => {
       const { soundEnabled: sEnabled, sfxVolume: sVol } = soundRef.current;
       playSFX("coin-flip.mp3", sEnabled, sVol);
+      setGameId(data.gameId || null);
       const first =
         gameConfigRef.current.mode === "2v2"
           ? data.firstTeam === gameConfigRef.current.team
@@ -398,8 +409,10 @@ export default function App() {
       const type = data.sunkShopId ? "SUNK" : data.isHit ? "HIT" : "MISS";
       if (data.players) setRoomPlayers(data.players);
 
-      if (data.isHit) {
-        playSFX("sizzling-pan.mp3", sEnabled, sVol);
+      if (data.sunkShopId) {
+        playSFX("success jingle.mp3", sEnabled, sVol);
+      } else if (data.isHit) {
+        playSFX("pop.mp3", sEnabled, sVol);
       } else {
         playSFX("waterdrop.mp3", sEnabled, sVol * 0.7);
       }
@@ -476,6 +489,7 @@ export default function App() {
       shotPendingRef.current = false;
       setShotPending(false);
       setWinner(data.winnerTeam);
+      setWinnerBoards(data.winnerBoards || []);
       setGameState("FINISHED");
       if (data.winnerTeam === gameConfigRef.current.team) {
         playSFX("success jingle.mp3", sEnabled, sVol);
@@ -798,6 +812,26 @@ export default function App() {
     setMessages([]);
   };
 
+  const handleReportMatch = async ({ reportedPlayer, reason }) => {
+    const response = await fetch(apiUrl("/api/reports"), {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${getToken()}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ gameId, reportedPlayer, reason, matchId: gameId }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(result.message || "Không gửi được báo cáo.");
+    }
+    showAlert(
+      "Đã nhận báo cáo",
+      "Báo cáo trận đã được gửi để quản trị viên xem xét.",
+      "success",
+    );
+  };
+
   const getShopHealth = (shopId) => {
     const shopCells = myBoard.filter((cell) => cell && cell.shopId === shopId);
     const aliveCells = shopCells.filter((cell) => cell.shot !== "HIT");
@@ -1028,6 +1062,13 @@ export default function App() {
             {gameState === "FINISHED" && (
               <ResultScreen
                 isWinner={winner === team}
+                gameId={gameId}
+                canReport={Boolean(currentUser)}
+                opponents={roomPlayers.filter((player) => player.team !== team)}
+                onReport={handleReportMatch}
+                winnerBoards={winnerBoards}
+                shops={activeShops}
+                boardSize={gridSize}
                 onRematch={handleRematch}
                 onLeave={handleLeaveRoom}
               />

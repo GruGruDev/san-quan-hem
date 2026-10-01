@@ -24,6 +24,16 @@ const userSchema = new mongoose.Schema({
   weeklyWins: { type: Number, default: 0 },
   weeklyMatches: { type: Number, default: 0 },
   weeklyWeekStart: { type: Date, default: Date.now },
+  isDonor: { type: Boolean, default: false },
+  donorSince: { type: Date, default: null },
+  isBanned: { type: Boolean, default: false },
+  inventory: [
+    {
+      itemId: { type: String, required: true },
+      quantity: { type: Number, default: 1, min: 1 },
+      grantedAt: { type: Date, default: Date.now },
+    },
+  ],
   createdAt: { type: Date, default: Date.now },
 });
 

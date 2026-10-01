@@ -1,10 +1,14 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.jsx'
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import AdminApp from "./AdminApp.jsx";
+import App from "./App.jsx";
+import "./index.css";
 
-createRoot(document.getElementById('root')).render(
+const RootApp =
+  window.location.pathname.replace(/\/+$/, "") === "/admin" ? AdminApp : App;
+
+createRoot(document.getElementById("root")).render(
   <StrictMode>
-    <App />
+    <RootApp />
   </StrictMode>,
-)
+);

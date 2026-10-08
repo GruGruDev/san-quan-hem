@@ -1,23 +1,67 @@
-export const APP_VERSION = "v1.3";
+export const APP_VERSION = "v1.4 - Tetris Update";
 
-// 5 loại quán ăn trong hẻm
+// 5 loại quán ăn với hình dạng Tetris (0: rỗng, 1: có quán)
 export const ALL_SHOPS = [
-  { id: "cavien", name: "Xe Cá Viên Chiên", size: 2, icon: "/cavienchien.png" },
-  { id: "trasua", name: "Tiệm Trà Sữa", size: 3, icon: "/trasua.png" },
-  { id: "bunrieu", name: "Gánh Bún Riêu", size: 3, icon: "/bunrieu.png" },
-  { id: "quanoc", name: "Quán Ốc Quen", size: 4, icon: "/donuong.png" },
-  { id: "quannhau", name: "Khu Nhậu Vỉa Hè", size: 5, icon: "/quannhau.png" },
+  {
+    id: "cavien",
+    name: "Xe Cá Viên",
+    size: 2,
+    shape: [[1, 1]],
+    icon: "/cavienchien.png",
+  }, // Đường thẳng
+  {
+    id: "trasua",
+    name: "Trà Sữa",
+    size: 3,
+    shape: [
+      [1, 1],
+      [1, 0],
+    ],
+    icon: "/trasua.png",
+  }, // Chữ L nhỏ
+  {
+    id: "bunrieu",
+    name: "Bún Riêu",
+    size: 4,
+    shape: [
+      [1, 1, 1],
+      [0, 1, 0],
+    ],
+    icon: "/bunrieu.png",
+  }, // Chữ T
+  {
+    id: "quanoc",
+    name: "Quán Ốc",
+    size: 4,
+    shape: [
+      [1, 0],
+      [1, 0],
+      [1, 1],
+    ],
+    icon: "/donuong.png",
+  }, // Chữ L vừa
+  {
+    id: "quannhau",
+    name: "Quán Nhậu",
+    size: 5,
+    shape: [
+      [1, 0, 0],
+      [1, 0, 0],
+      [1, 1, 1],
+    ],
+    icon: "/quannhau.png",
+  }, // Chữ L bự
 ];
 
-// Mặc định 3 quán chuẩn nếu không nhận được dữ liệu xoay từ Server
 export const SHOPS = ALL_SHOPS.slice(0, 3);
+// 2v2 Lấy đúng 4 quán: 2, 3, 4(Ốc), 5
 export const TWO_VS_TWO_SHOPS = [
   ALL_SHOPS[0],
   ALL_SHOPS[1],
   ALL_SHOPS[3],
   ALL_SHOPS[4],
 ];
-export const BOARD_SIZES = { "1v1": 8, "2v2": 10 };
+export const BOARD_SIZES = { "1v1": 8, "2v2": 12 };
 
 export const SHOP_OUTLINE = {
   cavien: "outline-amber-400",
@@ -28,10 +72,8 @@ export const SHOP_OUTLINE = {
   quannhau5: "outline-red-400",
 };
 
-// Kho câu thoại floating text chọc quêGen Z siêu đa dạng
 export const TAUNT_TEXTS = {
   MISS: [
-    // Kho thoại gốc & bổ sung thêm
     "biết đường không?",
     "lỏ rồi",
     "mù mắt",
@@ -40,77 +82,33 @@ export const TAUNT_TEXTS = {
     "gà quá",
     "ảo thật đấy",
     "non và xanh",
-    "bắn lại đi",
-    "ủa a lô?",
-    "google maps bó tay",
-    "nghỉ bán rồi em",
-    "ngõ cụt rồi!",
-    "chó rượt kìa!",
-    "mù đường thực sự",
     "bắn gió à?",
-    "nhìn lại bản đồ đi",
-    "tay nghề yếu quá",
     "trượt vỏ chuối!",
-    "hẻm này nhà trống!",
-    "sờ vào tường à?",
-    "bắn trúng không khí",
-    "nhà người ta đi vắng",
-    "ngố rừng về phố",
-    "hụt ăn rồi!",
   ],
   HIT: [
-    // Kho thoại gốc & bổ sung thêm
     "đây rồi!",
     "búuu!",
     "tao biết ngay",
-    "chết me m",
     "chạy đằng trời",
     "lượm lúa",
     "dính đạn",
     "trúng phóc",
-    "đúng ổ luôn",
     "nổ hũ!",
-    "bắn chuẩn đét!",
-    "mất mối ăn rồi!",
     "ăn tiền!",
-    "chạy đi đâu con sâu",
-    "thấy chưa?",
-    "ngon lành cạ đào",
-    "đúng điểm nóng!",
-    "trúng chóc luôn",
     "xèo xèo thơm phức",
-    "đã tay chưa!",
-    "gần sập rồi đó",
-    "chạy sao thoát!",
-    "gãy cánh rồi nhé",
-    "dính chấu!",
   ],
   SUNK: [
-    // Kho thoại gốc & bổ sung thêm
-    "chạn tao đi!",
-    "tới đi!",
-    "gáy nữa đi?",
     "sập tiệm!",
     "về vườn!",
     "giải tán quán!",
     "bay màu!",
-    "mất mối làm ăn!",
-    "càn quét sạch quán!",
-    "đã đánh sập!",
-    "mất sổ gạo rồi!",
-    "trả mặt bằng gấp!",
-    "dẹp tiệm nghỉ bán!",
-    "cháy nhà ra mặt chuột!",
     "rút phích cắm luôn!",
-    "khỏi buôn bán gì nữa!",
     "phá sản rồi em!",
-    "trắng tay trong hẻm!",
     "ra bờ đê nằm!",
-    "bay luôn quán gu ruột!",
+    "cháy nhà ra mặt chuột!",
   ],
 };
 
-// Tính toán Rank theo số trận thắng
 export const getPlayerRank = (wins = 0) => {
   if (wins >= 35)
     return { title: "Thực Thần", icon: "👑", color: "text-amber-300" };
@@ -123,7 +121,6 @@ export const getPlayerRank = (wins = 0) => {
   return { title: "Mù Đường", icon: "🛵", color: "text-slate-400" };
 };
 
-// Bộ lọc từ ngữ nhạy cảm sang Emoji đồ ăn
 const BAD_WORDS_MAP = {
   vãi: "🍿",
   vcl: "🧋",
@@ -133,7 +130,6 @@ const BAD_WORDS_MAP = {
   dm: "🍡",
   vl: "🥤",
 };
-
 export const filterBadWords = (text = "") => {
   let filtered = text;
   Object.keys(BAD_WORDS_MAP).forEach((word) => {
@@ -141,4 +137,15 @@ export const filterBadWords = (text = "") => {
     filtered = filtered.replace(regex, BAD_WORDS_MAP[word]);
   });
   return filtered;
+};
+
+// Hàm xoay ma trận 90 độ
+export const rotateShape = (shape, times) => {
+  let result = shape;
+  for (let i = 0; i < times % 4; i++) {
+    result = result[0].map((_, index) =>
+      result.map((row) => row[index]).reverse(),
+    );
+  }
+  return result;
 };

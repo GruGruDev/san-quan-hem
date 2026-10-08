@@ -126,13 +126,12 @@ export default function App() {
 
   const [activeShops, setActiveShops] = useState(SHOPS);
   const [selectedShop, setSelectedShop] = useState(SHOPS[0]?.id || "cavien");
-  const [orientation, setOrientation] = useState("HORIZONTAL");
+  const [rotation, setRotation] = useState(0);
   const [previewIndex, setPreviewIndex] = useState(null);
   const [myBoard, setMyBoard] = useState(
     Array(BOARD_SIZES["1v1"] ** 2).fill(null),
   );
 
-  // Board Địch dùng chung (1 mảng duy nhất)
   const [opponentHits, setOpponentHits] = useState(
     Array(BOARD_SIZES["1v1"] ** 2).fill(null),
   );
@@ -144,7 +143,7 @@ export default function App() {
   const [currentTurnId, setCurrentTurnId] = useState(null);
   const [coinFlipResult, setCoinFlipResult] = useState(null);
   const [recentShot, setRecentShot] = useState(null);
-  const [opponentAimingIndex, setOpponentAimingIndex] = useState(null);
+  const [aimingData, setAimingData] = useState(null);
   const [winner, setWinner] = useState(null);
   const [winnerBoards, setWinnerBoards] = useState([]);
   const [gameId, setGameId] = useState(null);
@@ -161,6 +160,9 @@ export default function App() {
   const [createdRoomCode, setCreatedRoomCode] = useState(null);
 
   const getToken = () => localStorage.getItem("token");
+
+  const isMyTeamTurn =
+    roomPlayers.find((p) => p.socketId === currentTurnId)?.team === team;
 
   const refreshSocketAuth = () => {
     socket.auth = { token: getToken() };
@@ -263,7 +265,7 @@ export default function App() {
     setOpponentHits(Array(newGridSize * newGridSize).fill(null));
     setOpponentSunkShops([]);
     setSelectedShop(newShops[0]?.id || "cavien");
-    setOrientation("HORIZONTAL");
+    setRotation(0);
     setPreviewIndex(null);
     setIsMyTurn(false);
     shotPendingRef.current = false;
@@ -271,11 +273,11 @@ export default function App() {
     setCurrentTurnId(null);
     setCoinFlipResult(null);
     setRecentShot(null);
+    setAimingData(null);
     setWinner(null);
     setWinnerBoards([]);
     setGameId(null);
     setTurnTimeLeft(25);
-    setOpponentAimingIndex(null);
     setSurrenderVote(null);
   };
 
@@ -384,7 +386,7 @@ export default function App() {
     });
 
     socket.on("shot_result", (data) => {
-      setOpponentAimingIndex(null);
+      setAimingData(null);
       const { soundEnabled: sEnabled, sfxVolume: sVol } = soundRef.current;
       const type = data.sunkShopId ? "SUNK" : data.isHit ? "HIT" : "MISS";
       if (data.players) setRoomPlayers(data.players);
@@ -430,17 +432,7 @@ export default function App() {
     });
 
     socket.on("receive_chat", (data) => setMessages((prev) => [...prev, data]));
-    socket.on("opponent_aiming", (data) => {
-      const targetIndex = data?.targetIndex;
-      setOpponentAimingIndex(
-        data?.targetTeam === gameConfigRef.current.team &&
-          Number.isInteger(targetIndex) &&
-          targetIndex >= 0 &&
-          targetIndex < gameConfigRef.current.gridSize ** 2
-          ? targetIndex
-          : null,
-      );
-    });
+    socket.on("opponent_aiming", (data) => setAimingData(data));
 
     socket.on("game_over", (data) => {
       const { soundEnabled: sEnabled, sfxVolume: sVol } = soundRef.current;
@@ -578,101 +570,7 @@ export default function App() {
 
   const handleRotate = () => {
     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
-    const nextOrientation =
-      orientation === "HORIZONTAL" ? "VERTICAL" : "HORIZONTAL";
-    setOrientation(nextOrientation);
-    const currentShopObj = activeShops.find((s) => s.id === selectedShop);
-    if (!currentShopObj) return;
-
-    const placedIndex = myBoard.findIndex(
-      (cell) => cell && cell.shopId === selectedShop,
-    );
-    if (placedIndex !== -1) {
-      let row = Math.floor(placedIndex / gridSize);
-      let col = placedIndex % gridSize;
-      const size = currentShopObj.size;
-      const isHorizontal = nextOrientation === "HORIZONTAL";
-      if (isHorizontal && col + size > gridSize) col = gridSize - size;
-      if (!isHorizontal && row + size > gridSize) row = gridSize - size;
-      const adjustedIndex = row * gridSize + col;
-      const newIndices = [];
-      for (let i = 0; i < size; i++)
-        newIndices.push(
-          isHorizontal ? adjustedIndex + i : adjustedIndex + i * gridSize,
-        );
-      const isOverlap = newIndices.some(
-        (idx) => myBoard[idx] !== null && myBoard[idx].shopId !== selectedShop,
-      );
-
-      if (!isOverlap) {
-        const newBoard = myBoard.map((cell) =>
-          cell && cell.shopId === selectedShop ? null : cell,
-        );
-        newIndices.forEach((idx) => {
-          newBoard[idx] = {
-            shopId: currentShopObj.id,
-            icon: currentShopObj.icon,
-            name: currentShopObj.name,
-          };
-        });
-        setMyBoard(newBoard);
-        setPreviewIndex(adjustedIndex);
-        if (gameConfigRef.current.mode === "2v2")
-          socket.emit("sync_team_board", {
-            roomId: roomIdRef.current,
-            board: newBoard,
-          });
-      }
-    }
-  };
-
-  const handleConfirmPlaceShop = () => {
-    playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
-    if (previewIndex === null) return;
-    const currentShopObj =
-      activeShops.find((s) => s.id === selectedShop) || activeShops[0];
-    const size = currentShopObj.size;
-    const isHorizontal = orientation === "HORIZONTAL";
-    let row = Math.floor(previewIndex / gridSize);
-    let col = previewIndex % gridSize;
-
-    if (isHorizontal && col + size > gridSize) col = gridSize - size;
-    if (!isHorizontal && row + size > gridSize) row = gridSize - size;
-    const adjustedIndex = row * gridSize + col;
-    const indices = [];
-    for (let i = 0; i < size; i++)
-      indices.push(
-        isHorizontal ? adjustedIndex + i : adjustedIndex + i * gridSize,
-      );
-    const isOverlap = indices.some(
-      (idx) => myBoard[idx] !== null && myBoard[idx].shopId !== selectedShop,
-    );
-
-    if (!isOverlap) {
-      const newBoard = myBoard.map((cell) =>
-        cell && cell.shopId === selectedShop ? null : cell,
-      );
-      indices.forEach((idx) => {
-        newBoard[idx] = {
-          shopId: currentShopObj.id,
-          icon: currentShopObj.icon,
-          name: currentShopObj.name,
-        };
-      });
-      setMyBoard(newBoard);
-      setPreviewIndex(null);
-      if (gameConfigRef.current.mode === "2v2")
-        socket.emit("sync_team_board", {
-          roomId: roomIdRef.current,
-          board: newBoard,
-        });
-
-      const placedShopIds = new Set(
-        newBoard.filter(Boolean).map((c) => c.shopId),
-      );
-      const nextShop = activeShops.find((s) => !placedShopIds.has(s.id));
-      if (nextShop) setSelectedShop(nextShop.id);
-    }
+    setRotation((prev) => (prev + 1) % 4);
   };
 
   const handleResetBoard = () => {
@@ -680,6 +578,7 @@ export default function App() {
     const emptyBoard = Array(gridSize * gridSize).fill(null);
     setMyBoard(emptyBoard);
     setPreviewIndex(null);
+    setRotation(0);
     if (gameConfigRef.current.mode === "2v2")
       socket.emit("sync_team_board", {
         roomId: roomIdRef.current,
@@ -799,12 +698,17 @@ export default function App() {
   return (
     <div className="min-h-dvh w-full bg-slate-950 text-white flex flex-col items-center justify-center p-2 select-none font-sans relative">
       <div
-        className={`relative flex min-h-0 overflow-hidden rounded-3xl shadow-2xl border-4 transition-all duration-500 bg-slate-900 ${
+        className={`relative flex min-h-0 overflow-hidden shadow-2xl transition-all duration-500 bg-slate-900 
+          ${
+            gameState === "LOBBY"
+              ? "w-full max-w-md flex-col rounded-3xl border-4 border-amber-900/60 mx-auto mt-2"
+              : "w-full h-full md:rounded-none md:border-0 flex-col md:flex-row border-slate-800"
+          }`}
+        style={
           gameState === "LOBBY"
-            ? "w-full max-w-md flex-col border-amber-900/60"
-            : "w-full md:max-w-5xl lg:max-w-6xl flex-col md:flex-row border-slate-800"
-        }`}
-        style={{ height: "min(53.125rem, max(calc(100dvh - 1rem), 42rem))" }}
+            ? { height: "min(53.125rem, max(calc(100dvh - 1rem), 42rem))" }
+            : { height: "100dvh" }
+        }
       >
         {gameState === "LOBBY" ? (
           <>
@@ -959,20 +863,19 @@ export default function App() {
                     </div>
                   </div>
                 )}
-                <div className="flex-1" /> {/* Spacer */}
+                <div className="flex-1" />
                 <BottomPanel
                   gameState={gameState}
                   selectedShop={selectedShop}
                   onSelectShop={(id) => {
                     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
                     setSelectedShop(id);
+                    setRotation(0);
                   }}
-                  orientation={orientation}
+                  rotation={rotation}
                   onRotate={handleRotate}
                   onResetBoard={handleResetBoard}
                   myBoard={myBoard}
-                  onConfirmPlaceShop={handleConfirmPlaceShop}
-                  isPreviewValid={previewIndex !== null}
                   onReady={handleReady}
                   onSendChat={handleSendChat}
                   messages={messages}
@@ -982,30 +885,47 @@ export default function App() {
               </div>
 
               {/* CỘT PHẢI: GameBoard */}
-              <main className="flex-1 p-2 md:p-6 flex items-center justify-center relative overflow-hidden">
-                <div className="w-full max-w-100 md:max-w-full md:h-full flex items-center justify-center">
-                  <GameBoard
-                    gameState={gameState}
-                    myBoard={myBoard}
-                    setMyBoard={setMyBoard}
-                    opponentHits={opponentHits}
-                    selectedShop={selectedShop}
-                    orientation={orientation}
-                    previewIndex={previewIndex}
-                    setPreviewIndex={setPreviewIndex}
-                    isMyTurn={isMyTurn}
-                    shotPending={shotPending}
-                    onFireShot={handleFireShot}
-                    opponentAimingIndex={opponentAimingIndex}
-                    onAimShot={handleAimShot}
-                    recentShot={recentShot}
-                    showTaunt={showTaunt}
-                    soundEnabled={soundEnabled}
-                    shops={activeShops}
-                    boardSize={gridSize}
-                    equippedCosmetics={currentUser?.equippedCosmetics || []}
-                  />
-                </div>
+              <main className="flex-1 p-2 md:p-6 flex items-center justify-center relative overflow-hidden bg-slate-950">
+                <GameBoard
+                  gameState={gameState}
+                  myBoard={myBoard}
+                  setMyBoard={(newBoard) => {
+                    setMyBoard(newBoard);
+                    if (mode === "2v2")
+                      socket.emit("sync_team_board", {
+                        roomId: roomIdRef.current,
+                        board: newBoard,
+                      });
+                    const placedShopIds = new Set(
+                      newBoard.filter(Boolean).map((c) => c.shopId),
+                    );
+                    const nextShop = activeShops.find(
+                      (s) => !placedShopIds.has(s.id),
+                    );
+                    if (nextShop) {
+                      setSelectedShop(nextShop.id);
+                      setRotation(0);
+                    }
+                  }}
+                  opponentHits={opponentHits}
+                  selectedShop={selectedShop}
+                  rotation={rotation}
+                  previewIndex={previewIndex}
+                  setPreviewIndex={setPreviewIndex}
+                  isMyTurn={isMyTurn}
+                  isMyTeamTurn={isMyTeamTurn}
+                  shotPending={shotPending}
+                  onFireShot={handleFireShot}
+                  aimingData={aimingData}
+                  onAimShot={handleAimShot}
+                  recentShot={recentShot}
+                  showTaunt={showTaunt}
+                  soundEnabled={soundEnabled}
+                  shops={activeShops}
+                  boardSize={gridSize}
+                  equippedCosmetics={currentUser?.equippedCosmetics || []}
+                  team={team}
+                />
               </main>
             </div>
 

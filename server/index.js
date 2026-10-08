@@ -693,17 +693,7 @@ app.post("/api/register", authLimiter, async (req, res) => {
       JWT_SECRET,
       { expiresIn: "7d" },
     );
-    res.json({
-      token,
-      user: {
-        id: newUser._id,
-        username: newUser.username,
-        displayName: newUser.displayName,
-        wins: newUser.wins,
-        matches: newUser.matches,
-        isDonor: Boolean(newUser.isDonor),
-      },
-    });
+    res.json({ token, user: oauthUserPayload(newUser) });
   } catch (err) {
     if (err.code === 11000)
       return res
@@ -748,17 +738,7 @@ app.post("/api/login", authLimiter, async (req, res) => {
       JWT_SECRET,
       { expiresIn: "7d" },
     );
-    res.json({
-      token,
-      user: {
-        id: user._id,
-        username: user.username,
-        displayName: user.displayName,
-        wins: user.wins,
-        matches: user.matches,
-        isDonor: Boolean(user.isDonor),
-      },
-    });
+    res.json({ token, user: oauthUserPayload(user) });
   } catch (err) {
     res.status(500).json({ message: "Lỗi máy chủ!" });
   }
@@ -1152,40 +1132,78 @@ const selectRandomShops = (mode = "1v1") => {
   const pool2 = [
     {
       id: "cavien",
-      name: "Xe Cá Viên Chiên",
+      name: "Xe Cá Viên",
       size: 2,
+      shape: [[1, 1]],
       icon: "/cavienchien.png",
     },
   ];
   const pool3 = [
-    { id: "trasua", name: "Tiệm Trà Sữa", size: 3, icon: "/trasua.png" },
-    { id: "bunrieu", name: "Gánh Bún Riêu", size: 3, icon: "/bunrieu.png" },
+    {
+      id: "trasua",
+      name: "Trà Sữa",
+      size: 3,
+      shape: [
+        [1, 1],
+        [1, 0],
+      ],
+      icon: "/trasua.png",
+    },
   ];
   const pool4 = [
-    { id: "quanoc", name: "Quán Ốc Quen", size: 4, icon: "/donuong.png" },
+    {
+      id: "quanoc",
+      name: "Quán Ốc",
+      size: 4,
+      shape: [
+        [1, 1, 1],
+        [0, 1, 0],
+      ],
+      icon: "/donuong.png",
+    },
+    {
+      id: "bunrieu",
+      name: "Bún Riêu",
+      size: 4,
+      shape: [
+        [1, 1],
+        [1, 0],
+        [1, 0],
+      ],
+      icon: "/bunrieu.png",
+    },
   ];
   const pool5 = [
     {
-      id: "quannhau5",
-      name: "Khu Nhậu Vỉa Hè",
+      id: "quannhau",
+      name: "Quán Nhậu",
       size: 5,
+      shape: [
+        [1, 0, 0],
+        [1, 0, 0],
+        [1, 1, 1],
+      ],
       icon: "/quannhau.png",
     },
   ];
-  const pickRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
-  if (mode === "2v2") {
-    // 2v2: 6 quán (chia sẻ chung trên bàn 12x12)
+  const pickRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  if (mode === "2v2")
     return [
       pickRandom(pool2),
-      pickRandom(pool2),
-      pickRandom(pool3),
       pickRandom(pool3),
       pickRandom(pool4),
       pickRandom(pool5),
     ];
-  }
   return [pickRandom(pool2), pickRandom(pool3), pickRandom(pool4)];
+};
+
+const rotateShape = (shape, times) => {
+  let result = shape;
+  for (let i = 0; i < times % 4; i++) {
+    result = result[0].map((_, idx) => result.map((row) => row[idx]).reverse());
+  }
+  return result;
 };
 
 const generateBotBoard = (shops, gridSize = 8) => {
@@ -1193,22 +1211,27 @@ const generateBotBoard = (shops, gridSize = 8) => {
   shops.forEach((shop) => {
     let placed = false;
     while (!placed) {
-      const isHorizontal = Math.random() < 0.5;
+      const rotation = Math.floor(Math.random() * 4);
+      const shape = rotateShape(shop.shape, rotation);
+      const rows = shape.length;
+      const cols = shape[0].length;
+
       const startIndex = Math.floor(Math.random() * board.length);
-      let row = Math.floor(startIndex / gridSize);
-      let col = startIndex % gridSize;
-      if (isHorizontal && col + shop.size > gridSize)
-        col = gridSize - shop.size;
-      if (!isHorizontal && row + shop.size > gridSize)
-        row = gridSize - shop.size;
-      const adjustedIndex = row * gridSize + col;
+      let startRow = Math.floor(startIndex / gridSize);
+      let startCol = startIndex % gridSize;
+
+      if (startCol + cols > gridSize) startCol = gridSize - cols;
+      if (startRow + rows > gridSize) startRow = gridSize - rows;
+
       const indices = [];
-      for (let i = 0; i < shop.size; i++)
-        indices.push(
-          isHorizontal ? adjustedIndex + i : adjustedIndex + i * gridSize,
-        );
-      const isOverlap = indices.some((idx) => board[idx] !== null);
-      if (!isOverlap) {
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (shape[r][c] === 1)
+            indices.push((startRow + r) * gridSize + (startCol + c));
+        }
+      }
+
+      if (!indices.some((idx) => board[idx] !== null)) {
         indices.forEach((idx) => {
           board[idx] = { shopId: shop.id, icon: shop.icon, name: shop.name };
         });
@@ -1223,30 +1246,18 @@ const sanitizeBoard = (board, shops, gridSize = 8) => {
   if (!Array.isArray(board) || board.length !== gridSize * gridSize)
     return null;
   const clean = Array(gridSize * gridSize).fill(null);
-  const indicesByShop = {};
+  const counts = {};
 
   for (let i = 0; i < gridSize * gridSize; i++) {
     const cell = board[i];
-    if (cell === null || cell === undefined) continue;
+    if (!cell) continue;
     const shop = shops.find((s) => s.id === cell.shopId);
     if (!shop) return null;
-    if (!indicesByShop[shop.id]) indicesByShop[shop.id] = [];
-    indicesByShop[shop.id].push(i);
+    counts[shop.id] = (counts[shop.id] || 0) + 1;
     clean[i] = { shopId: shop.id, icon: shop.icon, name: shop.name };
   }
-
   for (const shop of shops) {
-    const idxs = indicesByShop[shop.id];
-    if (!idxs || idxs.length !== shop.size) return null;
-    const first = idxs[0];
-    const last = idxs[idxs.length - 1];
-    const isHorizontal =
-      Math.floor(first / gridSize) === Math.floor(last / gridSize) &&
-      idxs.every((v, k) => k === 0 || v === idxs[k - 1] + 1);
-    const isVertical = idxs.every(
-      (v, k) => k === 0 || v === idxs[k - 1] + gridSize,
-    );
-    if (!isHorizontal && !isVertical) return null;
+    if (counts[shop.id] !== shop.size) return null;
   }
   return clean;
 };
@@ -1289,18 +1300,17 @@ const createGameRoom = (roomId, mode, players, options = {}) => {
     roomCode: options.roomCode || null,
     hostSocketId: options.hostSocketId || null,
     isPrivate: Boolean(options.isPrivate),
-    isBotRoom: Boolean(options.isBotRoom), // Cờ chung cho phòng đánh bot (1v1)
+    isBotRoom: Boolean(options.isBotRoom),
     mode: settings.mode,
     gridSize: settings.gridSize,
     playerCount: settings.playerCount,
     players,
-    // CHUNG BÀN CỜ ĐỘI (SHARED TEAM BOARDS)
     teamBoards: {
       red: Array(settings.gridSize * settings.gridSize).fill(null),
       blue: Array(settings.gridSize * settings.gridSize).fill(null),
     },
     teamReady: { red: false, blue: false },
-    surrenderVotes: { red: null, blue: null }, // Null: Chưa vote, Object: Đang vote { initiator, agree }
+    surrenderVotes: { red: null, blue: null },
     shotLog: [],
     shops: selectRandomShops(settings.mode),
     gameState: options.waiting ? "WAITING_FRIEND" : "SETUP",
@@ -1331,14 +1341,12 @@ const notifyMatchFound = (room, message) => {
 
 // --- QUẢN LÝ TIMER AFK (SERVER-SIDE) ---
 const turnTimers = {};
-
 const clearTurnTimer = (roomId) => {
   if (turnTimers[roomId]) {
     clearTimeout(turnTimers[roomId]);
     delete turnTimers[roomId];
   }
 };
-
 const scheduleTurnTimer = (roomId, expectedTurnId, delay = 25000) => {
   clearTurnTimer(roomId);
   turnTimers[roomId] = setTimeout(() => {
@@ -1403,18 +1411,16 @@ const isBoardDestroyed = (board) =>
   board.every((cell) => !cell?.shopId || cell.shot === "HIT");
 
 const getWinningTeam = (room) => {
-  // Vì xài chung bàn cờ nên sập bàn cờ = Cả đội thua
   if (isBoardDestroyed(room.teamBoards.red)) return "blue";
   if (isBoardDestroyed(room.teamBoards.blue)) return "red";
   return null;
 };
 
-// AUTO-SETUP CHO BOT TRONG 2V2 NẾU CẢ ĐỘI LÀ BOT
 const autoSetupBotTeam = (room, team) => {
   const teamPlayers = Object.values(room.players).filter(
     (p) => p.team === team,
   );
-  const allBots = teamPlayers.every((p) => p.isBot);
+  const allBots = teamPlayers.length > 0 && teamPlayers.every((p) => p.isBot);
   if (allBots) {
     room.teamBoards[team] = generateBotBoard(room.shops, room.gridSize);
     room.teamReady[team] = true;
@@ -1448,7 +1454,6 @@ const startRoomIfReady = (room) => {
     gameId: room.gameId,
   });
 
-  // Bắt đầu đồng hồ 25s đầu tiên sau khi xem xu (delay 4s)
   setTimeout(() => {
     if (activeRooms[room.roomId]?.gameState === "PLAYING") {
       scheduleTurnTimer(room.roomId, room.turn, 25000);
@@ -1460,7 +1465,6 @@ const startRoomIfReady = (room) => {
 };
 
 const updateFinishedGameStats = async (room, winnerTeam) => {
-  // Tính win/lose cho tất cả human trong phòng
   await Promise.all(
     Object.values(room.players)
       .filter((player) => !player.isBot && player.userId)
@@ -1480,7 +1484,6 @@ const broadcastGameOver = async (room, winnerTeam) => {
   clearTurnTimer(room.roomId);
   room.finishedAt = new Date();
 
-  // Báo kết quả về client
   io.to(room.roomId).emit("game_over", {
     winnerTeam,
     shots: room.shotLog || [],
@@ -1490,7 +1493,7 @@ const broadcastGameOver = async (room, winnerTeam) => {
     winnerBoards: Object.values(room.players)
       .filter((p) => p.team === winnerTeam)
       .map((p) => ({
-        name: p.name, // Lấy đại 1 người làm hiển thị
+        name: p.name,
         board: room.teamBoards[p.team].map((cell) =>
           cell
             ? { shopId: cell.shopId || null, shot: cell.shot || null }
@@ -1563,7 +1566,6 @@ const applyShot = async (room, shooterId, targetTeam, targetIndex) => {
 
   let nextTurnId = room.turn;
   if (!winnerTeam && !isHit) {
-    // Trượt -> Chuyển lượt người kế tiếp
     room.turnIndex = (room.turnIndex + 1) % room.turnOrder.length;
     nextTurnId = room.turnOrder[room.turnIndex];
   }
@@ -1574,7 +1576,7 @@ const applyShot = async (room, shooterId, targetTeam, targetIndex) => {
     sequence: room.shotLog.length + 1,
     shooterId: shooter.userId || null,
     shooterName: shooter.name,
-    targetId: null, // Đã chuyển sang bắn vào Đội
+    targetId: null,
     targetName: `Đội ${targetTeam === "red" ? "Đỏ" : "Xanh"}`,
     targetIndex,
     result: sunkShopId ? "SUNK" : isHit ? "HIT" : "MISS",
@@ -1620,7 +1622,6 @@ const triggerBotShot = (roomId) => {
   const targetIndex =
     availableIndices[Math.floor(Math.random() * availableIndices.length)];
 
-  // Gửi kính ngắm tạo áp lực
   io.to(roomId).emit("opponent_aiming", {
     shooterId: bot.socketId,
     targetTeam: enemyTeam,
@@ -1659,7 +1660,6 @@ const resetRoomForRematch = (room) => {
     p.ready = Boolean(p.isBot);
   });
 
-  // Tự động setup lại nếu có đội full bot
   autoSetupBotTeam(room, "red");
   autoSetupBotTeam(room, "blue");
 };
@@ -1774,7 +1774,6 @@ const handleRoomDeparture = async (room, socketId) => {
   }
 
   if (room.gameState === "SETUP" || room.gameState === "PLAYING") {
-    // 2v2 Chung bàn cờ, một người thoát = cả đội đầu hàng (Lose)
     clearTurnTimer(room.roomId);
     io.to(room.roomId).emit("receive_chat", {
       sender: "Hệ thống",
@@ -1980,7 +1979,6 @@ io.on("connection", (socket) => {
     emitRoomUpdate(room);
   });
 
-  // HOST QUẢN LÝ LOBBY
   socket.on("add_bot", (data = {}) => {
     if (!isSocketPayload(data)) return;
     const room = activeRooms[data.roomId];
@@ -2045,16 +2043,39 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // Auto setup nếu team chỉ toàn bot
     autoSetupBotTeam(room, "red");
     autoSetupBotTeam(room, "blue");
-
     notifyMatchFound(
       room,
       room.mode === "2v2"
         ? "Chủ phòng đã bắt đầu trận. Hãy cùng xếp quán!"
         : "Chủ phòng đã bắt đầu trận. Sẵn sàng xếp quán.",
     );
+  });
+
+  socket.on("set_private_mode", (data = {}) => {
+    if (!isSocketPayload(data)) return;
+    const room = activeRooms[data.roomId];
+    if (
+      !room?.isPrivate ||
+      room.hostSocketId !== socket.id ||
+      room.gameState !== "WAITING_FRIEND"
+    )
+      return;
+
+    const settings = getModeSettings(data.mode);
+    if (Object.keys(room.players).length > settings.playerCount) {
+      socket.emit(
+        "join_private_error",
+        "Phòng đang có quá nhiều người cho mode này.",
+      );
+      return;
+    }
+    room.mode = settings.mode;
+    room.gridSize = settings.gridSize;
+    room.playerCount = settings.playerCount;
+    room.shops = selectRandomShops(settings.mode);
+    emitRoomUpdate(room);
   });
 
   socket.on("join_private_room", (data = {}) => {
@@ -2168,7 +2189,6 @@ io.on("connection", (socket) => {
     emitRoomUpdate(room);
   });
 
-  // --- CO-OP SETUP ĐỒNG BỘ REALTIME ---
   socket.on("sync_team_board", (data = {}) => {
     if (!isSocketPayload(data)) return;
     const { roomId, board } = data;
@@ -2176,7 +2196,7 @@ io.on("connection", (socket) => {
     if (!room || room.gameState !== "SETUP") return;
 
     const player = room.players[socket.id];
-    if (!player || room.teamReady[player.team]) return; // Nếu đội đã chốt thì không cho sync nữa
+    if (!player || room.teamReady[player.team]) return;
 
     const teammate = Object.values(room.players).find(
       (p) => p.team === player.team && p.socketId !== socket.id && !p.isBot,
@@ -2199,7 +2219,7 @@ io.on("connection", (socket) => {
     if (room.gameState !== "SETUP") return;
 
     const player = room.players[socket.id];
-    if (room.teamReady[player.team]) return; // Đội đã khóa bàn cờ
+    if (room.teamReady[player.team]) return;
 
     const cleanBoard = sanitizeBoard(
       data.playerBoard,
@@ -2211,7 +2231,6 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // Khoá bàn cờ cho cả Team
     room.teamBoards[player.team] = cleanBoard;
     room.teamReady[player.team] = true;
     Object.values(room.players).forEach((p) => {
@@ -2270,7 +2289,6 @@ io.on("connection", (socket) => {
     });
   });
 
-  // --- BỎ PHIẾU ĐẦU HÀNG (SURRENDER VOTE) ---
   socket.on("surrender_request", (data = {}) => {
     if (!isSocketPayload(data)) return;
     const room = activeRooms[data.roomId];
@@ -2278,7 +2296,6 @@ io.on("connection", (socket) => {
     const player = room.players[socket.id];
     if (!player) return;
 
-    // Nếu là 1v1 hoặc có 1 mình (đồng đội là bot), xử thua luôn
     const humanTeammates = Object.values(room.players).filter(
       (p) => p.team === player.team && p.socketId !== socket.id && !p.isBot,
     );
@@ -2292,11 +2309,9 @@ io.on("connection", (socket) => {
       const winnerTeam = player.team === "red" ? "blue" : "red";
       broadcastGameOver(room, winnerTeam);
     } else {
-      // 2v2: Tạo cuộc bình chọn
-      if (room.surrenderVotes[player.team]) return; // Đang vote rồi
+      if (room.surrenderVotes[player.team]) return;
       room.surrenderVotes[player.team] = { initiator: socket.id, agree: 1 };
 
-      // Báo cho đồng đội
       humanTeammates.forEach((p) => {
         io.to(p.socketId).emit("surrender_vote_started", {
           initiatorName: player.name,
@@ -2339,10 +2354,9 @@ io.on("connection", (socket) => {
     }
   });
 
-  // --- KÊNH CHAT: ALL HOẶC TEAM ---
   socket.on("send_chat", (data = {}) => {
     if (!isSocketPayload(data)) return;
-    const { roomId, text, type } = data; // type: "ALL" | "TEAM"
+    const { roomId, text, type } = data;
     const room = activeRooms[roomId];
     const player = room?.players[socket.id];
 

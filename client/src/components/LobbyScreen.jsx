@@ -47,7 +47,7 @@ export default function LobbyScreen({
           className="absolute inset-0 w-full h-full bg-cover bg-center transition-all duration-700"
           style={{ backgroundImage: `url('/bg.png')` }}
         >
-          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/80 via-amber-950/40 to-slate-950/90 backdrop-blur-[1px]" />
+          <div className="absolute inset-0 bg-linear-to-b from-slate-950/80 via-amber-950/40 to-slate-950/90 backdrop-blur-[1px]" />
         </div>
 
         {/* HEADER BAR */}
@@ -65,7 +65,7 @@ export default function LobbyScreen({
           </button>
 
           <div className="text-center flex flex-col items-center">
-            <div className="bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 text-slate-950 text-[9px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-widest shadow mb-0.5">
+            <div className="bg-linear-to-r from-amber-500 via-yellow-400 to-amber-500 text-slate-950 text-[9px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-widest shadow mb-0.5">
               Góc Phố Ăn Vặt
             </div>
             <h1 className="text-xl font-black text-amber-300 tracking-wider uppercase drop-shadow-[0_2px_10px_rgba(245,158,11,0.5)]">
@@ -74,7 +74,7 @@ export default function LobbyScreen({
           </div>
 
           {/* Cụm Nút Chức Năng Mở Rộng */}
-          <div className="flex gap-1.5 flex-wrap justify-end max-w-[100px]">
+          <div className="flex gap-1.5 flex-wrap justify-end max-w-25">
             <button
               onClick={onOpenTutorial}
               className="w-10 h-10 bg-emerald-950/80 hover:bg-emerald-900/80 border border-emerald-500/50 rounded-2xl flex items-center justify-center text-emerald-300 font-black text-base shadow-lg active:scale-95 transition backdrop-blur-md animate-pulse"
@@ -231,7 +231,7 @@ export default function LobbyScreen({
 
               <button
                 type="submit"
-                className="group relative w-full h-14 rounded-2xl bg-gradient-to-r from-amber-600 via-yellow-500 to-amber-600 p-0.5 shadow-[0_0_20px_rgba(245,158,11,0.4)] active:scale-95 transition-all duration-200"
+                className="group relative w-full h-14 rounded-2xl bg-linear-to-r from-amber-600 via-yellow-500 to-amber-600 p-0.5 shadow-[0_0_20px_rgba(245,158,11,0.4)] active:scale-95 transition-all duration-200"
               >
                 <div className="w-full h-full bg-slate-950/20 rounded-[14px] flex items-center justify-center gap-2 group-hover:bg-transparent transition">
                   <span className="text-xl">🛵</span>

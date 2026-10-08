@@ -160,7 +160,6 @@ export default function App() {
   const [createdRoomCode, setCreatedRoomCode] = useState(null);
 
   const getToken = () => localStorage.getItem("token");
-
   const isMyTeamTurn =
     roomPlayers.find((p) => p.socketId === currentTurnId)?.team === team;
 
@@ -696,19 +695,12 @@ export default function App() {
     return <LoadingScreen onFinish={() => setAppLoading(false)} />;
 
   return (
-    <div className="min-h-dvh w-full bg-slate-950 text-white flex flex-col items-center justify-center p-2 select-none font-sans relative">
+    <div className="min-h-dvh w-full bg-slate-950 text-white flex flex-col items-center justify-center p-0 md:p-2 select-none font-sans relative overflow-x-hidden">
       <div
-        className={`relative flex min-h-0 overflow-hidden shadow-2xl transition-all duration-500 bg-slate-900 
-          ${
-            gameState === "LOBBY"
-              ? "w-full max-w-md flex-col rounded-3xl border-4 border-amber-900/60 mx-auto mt-2"
-              : "w-full h-full md:rounded-none md:border-0 flex-col md:flex-row border-slate-800"
-          }`}
-        style={
-          gameState === "LOBBY"
-            ? { height: "min(53.125rem, max(calc(100dvh - 1rem), 42rem))" }
-            : { height: "100dvh" }
-        }
+        className={`relative flex min-h-0 overflow-hidden shadow-2xl transition-all duration-500 bg-slate-900 w-full h-full border-slate-800 ${
+          gameState === "LOBBY" ? "border-0 md:border-4" : "border-0"
+        }`}
+        style={{ minHeight: "100dvh" }}
       >
         {gameState === "LOBBY" ? (
           <>
@@ -806,7 +798,7 @@ export default function App() {
                         <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider">
                           🏠 ĐỘI BẠN
                         </span>
-                        <div className="flex flex-wrap gap-1.5 max-w-30">
+                        <div className="flex flex-wrap gap-1.5 max-w-[120px]">
                           {activeShops.map((s, idx) => {
                             const health = getShopHealth(s.id);
                             return (
@@ -836,7 +828,7 @@ export default function App() {
                         <span className="text-[10px] font-black text-rose-400 uppercase tracking-wider">
                           🎯 ĐỘI ĐỊCH
                         </span>
-                        <div className="flex flex-wrap justify-end gap-1.5 max-w-30">
+                        <div className="flex flex-wrap justify-end gap-1.5 max-w-[120px]">
                           {activeShops.map((s, idx) => (
                             <div
                               key={`opp-hud-${s.id}-${idx}`}
@@ -872,7 +864,7 @@ export default function App() {
                     setSelectedShop(id);
                     setRotation(0);
                   }}
-                  rotation={rotation}
+                  orientation="HORIZONTAL"
                   onRotate={handleRotate}
                   onResetBoard={handleResetBoard}
                   myBoard={myBoard}
@@ -1053,7 +1045,7 @@ export default function App() {
 
         {/* CUSTOM TOAST */}
         {customAlert.show && (
-          <div className="absolute inset-0 z-100 flex items-center justify-center bg-black/70 p-5 backdrop-blur-sm">
+          <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/70 p-5 backdrop-blur-sm">
             <div className="bg-slate-900 border-2 border-slate-700 rounded-3xl p-6 shadow-2xl w-full max-w-sm animate-fade-in flex flex-col items-center text-center">
               <div className="text-5xl mb-3 drop-shadow-md">
                 {customAlert.type === "error"

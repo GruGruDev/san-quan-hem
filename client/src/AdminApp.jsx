@@ -95,7 +95,7 @@ function BoardPreview({ board = [], size = 8 }) {
           <div
             key={index}
             title={`${String.fromCharCode(65 + Math.floor(index / size))}/${(index % size) + 1}${cell?.shopId ? ` · ${cell.shopId}` : ""}${cell?.shot ? ` · ${cell.shot}` : ""}`}
-            className={`border border-orange-500/25 ${cell?.shopId ? "bg-emerald-500/50" : ""} ${cell?.shot === "HIT" ? "!bg-rose-500" : ""} ${cell?.shot === "MISS" ? "!bg-sky-950" : ""}`}
+            className={`border border-orange-500/25 ${cell?.shopId ? "bg-emerald-500/50" : ""} ${cell?.shot === "HIT" ? "bg-rose-500!" : ""} ${cell?.shot === "MISS" ? "bg-sky-950!" : ""}`}
           />
         );
       })}
@@ -220,17 +220,6 @@ export default function AdminApp() {
     localStorage.removeItem("user");
     setAuthStatus("signed-out");
     setToken("");
-    <button
-      type="button"
-      onClick={() => {
-        setItemTarget(player._id);
-        setTab("items");
-        setData(null);
-      }}
-      className="border border-zinc-700 px-2 py-1 text-[10px] hover:border-emerald-500"
-    >
-      Vật phẩm
-    </button>;
     setAdmin(null);
     setData(null);
   };
@@ -548,13 +537,13 @@ export default function AdminApp() {
                 }
               />
               <div className="overflow-x-auto border border-zinc-800">
-                <table className="w-full min-w-[42rem] text-left text-xs">
+                <table className="w-full min-w-2xl text-left text-xs">
                   <thead className="bg-zinc-900 text-[10px] uppercase text-zinc-500">
                     <tr>
                       <th className="px-3 py-2">Người chơi</th>
                       <th className="px-3 py-2">Thắng / trận</th>
                       <th className="px-3 py-2">Trạng thái</th>
-                      <th className="px-3 py-2">Tài khoản</th>
+                      <th className="px-3 py-2">Ví Xu / Hẻm Coin</th>
                       <th className="px-3 py-2">Quản lý</th>
                     </tr>
                   </thead>
@@ -591,11 +580,12 @@ export default function AdminApp() {
                             {player.isBanned ? "Đã khóa" : "Bình thường"}
                           </span>
                         </td>
-                        <td className="px-3 py-3 text-zinc-400">
-                          {player.inventory?.length || 0} loại vật phẩm
+                        <td className="px-3 py-3 text-zinc-400 font-mono text-[11px]">
+                          <div>🪙 {player.xuBalance || 0} Xu</div>
+                          <div>💎 {player.hemCoinBalance || 0} Coin</div>
                         </td>
                         <td className="px-3 py-3">
-                          <div className="flex gap-1">
+                          <div className="flex gap-1 flex-wrap">
                             <button
                               type="button"
                               onClick={() =>
@@ -631,7 +621,6 @@ export default function AdminApp() {
                             <button
                               type="button"
                               onClick={() => {
-                                setSelectedPlayerId(player._id);
                                 setItemTarget(player._id);
                                 setTab("items");
                                 setData(null);
@@ -660,7 +649,7 @@ export default function AdminApp() {
                 detail={`${sectionData.total} socket đang kết nối. Tự tải lại bằng nút ↻.`}
               />
               <div className="overflow-x-auto border border-zinc-800">
-                <table className="w-full min-w-[36rem] text-left text-xs">
+                <table className="w-full min-w-xl text-left text-xs">
                   <thead className="bg-zinc-900 text-[10px] uppercase text-zinc-500">
                     <tr>
                       <th className="px-3 py-2">Tên</th>
@@ -706,38 +695,62 @@ export default function AdminApp() {
                     key={room.roomId}
                     className="border border-zinc-800 bg-zinc-900/50"
                   >
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setRoomExpanded(
-                          roomExpanded === room.roomId ? "" : room.roomId,
-                        )
-                      }
-                      className="flex w-full flex-wrap items-center justify-between gap-3 px-3 py-3 text-left"
-                    >
-                      <span>
+                    <div className="flex w-full flex-wrap items-center justify-between gap-3 px-3 py-3 border-b border-zinc-800/80">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setRoomExpanded(
+                            roomExpanded === room.roomId ? "" : room.roomId,
+                          )
+                        }
+                        className="flex items-center gap-2 text-left"
+                      >
                         <span className="font-mono text-xs font-bold text-emerald-300">
                           {room.roomId}
                         </span>
-                        <span className="ml-2 text-[10px] text-zinc-500">
+                        <span className="text-[10px] text-zinc-500">
                           {room.isPrivate ? "Kín" : "Công khai"} · {room.mode} ·{" "}
                           {room.gridSize}×{room.gridSize}
                         </span>
-                      </span>
-                      <span className="flex items-center gap-3 text-[10px]">
+                      </button>
+
+                      <div className="flex items-center gap-3 text-[10px]">
                         <span className="text-zinc-400">
                           {room.players.length} người
                         </span>
                         <span className="font-bold text-amber-300">
                           {room.gameState}
                         </span>
-                        <span className="text-zinc-500">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            mutate(
+                              `/api/admin/rooms/${room.roomId}`,
+                              "DELETE",
+                              {},
+                              `Đã giải tán phòng ${room.roomId}`,
+                            )
+                          }
+                          className="border border-rose-900 bg-rose-950/60 px-2 py-1 font-bold text-rose-300 hover:bg-rose-900"
+                        >
+                          Giải tán phòng
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setRoomExpanded(
+                              roomExpanded === room.roomId ? "" : room.roomId,
+                            )
+                          }
+                          className="text-zinc-500 px-1 font-bold"
+                        >
                           {roomExpanded === room.roomId ? "−" : "+"}
-                        </span>
-                      </span>
-                    </button>
+                        </button>
+                      </div>
+                    </div>
+
                     {roomExpanded === room.roomId && (
-                      <div className="grid gap-3 border-t border-zinc-800 p-3 sm:grid-cols-2">
+                      <div className="grid gap-3 p-3 sm:grid-cols-2">
                         {room.players.map((player) => (
                           <div
                             key={player.socketId}
@@ -779,7 +792,7 @@ export default function AdminApp() {
             <>
               <PanelHeading
                 title="Trận đấu"
-                detail={`${sectionData.total} trận đã lưu gần đây; bàn cờ chỉ dành cho quản trị.`}
+                detail={`${sectionData.total} trận đã lưu gần đây; bàn cờ dành cho quản trị.`}
                 action={
                   <span className="text-[10px] text-zinc-500">
                     Tối đa 100 trận mới nhất
@@ -797,7 +810,7 @@ export default function AdminApp() {
                         {match.gameId}
                       </span>
                       <span className="ml-3 text-[10px] text-zinc-400">
-                        {match.mode} · đội thắng {match.winnerTeam} ·{" "}
+                        {match.mode} · Đội thắng {match.winnerTeam} ·{" "}
                         {new Date(match.finishedAt).toLocaleString()}
                       </span>
                     </summary>
@@ -808,11 +821,13 @@ export default function AdminApp() {
                           className="border border-zinc-800 p-3"
                         >
                           <div className="mb-3 text-xs font-bold">
-                            {player.name} · đội {player.team}
+                            {player.name} · Đội {player.team}
                           </div>
                           <BoardPreview
                             board={player.board}
-                            size={match.gridSize}
+                            size={
+                              match.gridSize || (match.mode === "2v2" ? 12 : 8)
+                            }
                           />
                         </div>
                       ))}
@@ -934,7 +949,7 @@ export default function AdminApp() {
                           onChange={(event) => setItemId(event.target.value)}
                           pattern="[A-Za-z0-9_-]{1,64}"
                           required
-                          placeholder="vd: skin_huy_hieu"
+                          placeholder="vd: skin_cavien_neon"
                           className="mt-1 block w-full border border-zinc-700 bg-zinc-950 px-2 py-2 text-xs text-zinc-100"
                         />
                       </label>
@@ -961,9 +976,9 @@ export default function AdminApp() {
                     </form>
                   </div>
                   <div className="border-l-2 border-amber-500/60 bg-zinc-900/50 p-4 text-xs leading-relaxed text-zinc-400">
-                    Kho đồ đã có cấu trúc lưu theo mã và số lượng. Chưa có vật
-                    phẩm gameplay định nghĩa; chỉ cấp mã đã được đội phát triển
-                    quy ước để tránh tạo item không dùng được.
+                    Kho đồ được lưu theo mã itemId và số lượng. Hệ thống hiệu
+                    ứng trang trí (skin, nổ) nhận diện mã trực tiếp từ danh mục
+                    Store.
                   </div>
                 </div>
               )}
@@ -1272,7 +1287,7 @@ export default function AdminApp() {
                 detail="100 thao tác quản trị gần nhất."
               />
               <div className="overflow-x-auto border border-zinc-800">
-                <table className="w-full min-w-[40rem] text-left text-xs">
+                <table className="w-full min-w-160 text-left text-xs">
                   <thead className="bg-zinc-900 text-[10px] uppercase text-zinc-500">
                     <tr>
                       <th className="px-3 py-2">Thời gian</th>

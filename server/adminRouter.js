@@ -228,6 +228,18 @@ const createAdminRouter = ({
     }));
     res.json({ rooms, total: rooms.length });
   });
+  router.delete("/rooms/:roomId", async (req, res) => {
+    const { roomId } = req.params;
+    const room = activeRooms[roomId];
+    if (!room) return res.status(404).json({ message: "Phòng không tồn tại." });
+
+    // Báo tin nhắn hủy phòng cho mọi socket trong phòng và ngắt kết nối
+    io.to(roomId).emit("opponent_left", "Quản trị viên đã giải tán phòng này.");
+    delete activeRooms[roomId];
+
+    await writeAudit(req, "room.destroy", "room", roomId, { mode: room.mode });
+    res.json({ message: "Đã giải tán phòng thành công." });
+  });
 
   router.get("/matches", async (req, res) => {
     if (!requireDatabase(res)) return;

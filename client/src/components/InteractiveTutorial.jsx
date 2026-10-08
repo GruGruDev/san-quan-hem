@@ -56,14 +56,14 @@ export default function InteractiveTutorial({
   };
 
   return (
-    <div className="absolute inset-0 z-[100] bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-4 animate-fade-in select-none overflow-hidden">
+    <div className="absolute inset-0 z-100 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-4 animate-fade-in select-none overflow-hidden">
       {/* Nút Skip */}
       <button
         onClick={() => {
           playSFX("pop.mp3", soundEnabled, sfxVolume);
           setShowSkipConfirm(true);
         }}
-        className="absolute top-4 right-4 z-[110] bg-slate-800/80 border border-slate-700 text-slate-300 font-bold px-4 py-2 rounded-xl text-xs hover:bg-slate-700 active:scale-95 transition"
+        className="absolute top-4 right-4 z-110 bg-slate-800/80 border border-slate-700 text-slate-300 font-bold px-4 py-2 rounded-xl text-xs hover:bg-slate-700 active:scale-95 transition"
       >
         Bỏ qua ⏭️
       </button>
@@ -83,7 +83,7 @@ export default function InteractiveTutorial({
             </p>
             <button
               onClick={handleNextStep}
-              className="w-full bg-gradient-to-r from-amber-500 to-yellow-500 hover:brightness-110 text-slate-950 font-black py-3.5 rounded-xl uppercase tracking-wider active:scale-95 transition shadow-lg"
+              className="w-full bg-linear-to-r from-amber-500 to-yellow-500 hover:brightness-110 text-slate-950 font-black py-3.5 rounded-xl uppercase tracking-wider active:scale-95 transition shadow-lg"
             >
               Vào bài thực hành 🚀
             </button>
@@ -263,7 +263,7 @@ export default function InteractiveTutorial({
             </div>
             <button
               onClick={onComplete}
-              className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:brightness-110 text-white font-black py-3.5 rounded-xl uppercase tracking-wider active:scale-95 transition shadow-lg animate-pulse"
+              className="w-full bg-linear-to-r from-emerald-500 to-teal-500 hover:brightness-110 text-white font-black py-3.5 rounded-xl uppercase tracking-wider active:scale-95 transition shadow-lg animate-pulse"
             >
               Tuyệt, VÀO GAME THÔI! 🚀
             </button>
@@ -273,7 +273,7 @@ export default function InteractiveTutorial({
 
       {/* MODAL XÁC NHẬN BỎ QUA */}
       {showSkipConfirm && (
-        <div className="absolute inset-0 z-[120] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+        <div className="absolute inset-0 z-120 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
           <div className="w-full max-w-xs bg-slate-900 border-2 border-slate-700 rounded-3xl p-6 text-center animate-pop-in shadow-2xl">
             <h3 className="text-xl font-black text-amber-400 mb-2 uppercase">
               Khoan đã! ✋

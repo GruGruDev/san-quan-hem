@@ -47,7 +47,7 @@ export default function LobbyScreen({
         style={{ backgroundImage: `url('/bg.png')` }}
       >
         {/* Lớp Overlay phủ màu ánh đèn vàng cozy về đêm */}
-        <div className="absolute inset-0 bg-gradient-to-b from-slate-950/85 via-amber-950/50 to-slate-950/95 backdrop-blur-[2px]" />
+        <div className="absolute inset-0 bg-linear-to-b from-slate-950/85 via-amber-950/50 to-slate-950/95 backdrop-blur-[2px]" />
       </div>
 
       {/* HEADER BAR CHUNG */}
@@ -77,7 +77,7 @@ export default function LobbyScreen({
 
         {/* LOGO BẢNG HIỆU CỤM GIỮA */}
         <div className="text-center flex flex-col items-center">
-          <div className="bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 text-slate-950 text-[9px] font-black px-3 py-0.5 rounded-full uppercase tracking-widest shadow mb-0.5">
+          <div className="bg-linear-to-r from-amber-500 via-yellow-400 to-amber-500 text-slate-950 text-[9px] font-black px-3 py-0.5 rounded-full uppercase tracking-widest shadow mb-0.5">
             Góc Phố Ăn Vặt
           </div>
           <h1 className="text-2xl md:text-3xl font-black text-amber-300 tracking-wider uppercase drop-shadow-[0_2px_12px_rgba(245,158,11,0.6)]">
@@ -124,7 +124,7 @@ export default function LobbyScreen({
         <div className="relative z-10 max-w-4xl mx-auto w-full px-4 my-2">
           <div
             role="status"
-            className="border-l-4 border-amber-400 bg-slate-950/80 p-3 rounded-r-2xl text-left text-xs font-bold text-amber-100 shadow-xl backdrop-blur-md border border-slate-800"
+            className="border-l-4 border-amber-400 bg-slate-950/80 p-3 rounded-r-2xl text-left text-xs font-bold text-amber-100 shadow-xl backdrop-blur-md"
           >
             🔔 {announcement}
           </div>
@@ -280,7 +280,7 @@ export default function LobbyScreen({
             {/* NÚT VÀO HẺM SĂN GÀ */}
             <button
               type="submit"
-              className="group relative w-full h-16 rounded-2xl bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 p-0.5 shadow-[0_0_25px_rgba(245,158,11,0.5)] active:scale-95 transition-all duration-200 mt-1"
+              className="group relative w-full h-16 rounded-2xl bg-linear-to-r from-amber-500 via-yellow-400 to-amber-500 p-0.5 shadow-[0_0_25px_rgba(245,158,11,0.5)] active:scale-95 transition-all duration-200 mt-1"
             >
               <div className="w-full h-full bg-slate-950/10 rounded-[14px] flex items-center justify-center gap-3 group-hover:bg-transparent transition">
                 <span className="text-2xl animate-bounce">🛵</span>

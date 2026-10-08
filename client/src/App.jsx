@@ -798,7 +798,7 @@ export default function App() {
                         <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider">
                           🏠 ĐỘI BẠN
                         </span>
-                        <div className="flex flex-wrap gap-1.5 max-w-[120px]">
+                        <div className="flex flex-wrap gap-1.5 max-w-30">
                           {activeShops.map((s, idx) => {
                             const health = getShopHealth(s.id);
                             return (
@@ -828,7 +828,7 @@ export default function App() {
                         <span className="text-[10px] font-black text-rose-400 uppercase tracking-wider">
                           🎯 ĐỘI ĐỊCH
                         </span>
-                        <div className="flex flex-wrap justify-end gap-1.5 max-w-[120px]">
+                        <div className="flex flex-wrap justify-end gap-1.5 max-w-30">
                           {activeShops.map((s, idx) => (
                             <div
                               key={`opp-hud-${s.id}-${idx}`}
@@ -1045,7 +1045,7 @@ export default function App() {
 
         {/* CUSTOM TOAST */}
         {customAlert.show && (
-          <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/70 p-5 backdrop-blur-sm">
+          <div className="absolute inset-0 z-100 flex items-center justify-center bg-black/70 p-5 backdrop-blur-sm">
             <div className="bg-slate-900 border-2 border-slate-700 rounded-3xl p-6 shadow-2xl w-full max-w-sm animate-fade-in flex flex-col items-center text-center">
               <div className="text-5xl mb-3 drop-shadow-md">
                 {customAlert.type === "error"

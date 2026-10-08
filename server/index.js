@@ -55,10 +55,7 @@ const mailTransport =
         connectionTimeout: 10_000,
         greetingTimeout: 10_000,
         socketTimeout: 10_000,
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
+        auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
       })
     : null;
 const emailDeliveryConfigured = RESEND_API_KEY
@@ -76,15 +73,9 @@ const sendPasswordResetEmail = async (email, code) => {
         Authorization: `Bearer ${RESEND_API_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        from: RESEND_FROM,
-        to: [email],
-        subject,
-        text,
-      }),
+      body: JSON.stringify({ from: RESEND_FROM, to: [email], subject, text }),
       signal: AbortSignal.timeout(10_000),
     });
-
     if (!response.ok) {
       const error = new Error(`Resend returned HTTP ${response.status}.`);
       error.code = `RESEND_HTTP_${response.status}`;
@@ -92,7 +83,6 @@ const sendPasswordResetEmail = async (email, code) => {
     }
     return;
   }
-
   if (!mailTransport) throw new Error("Email delivery is not configured.");
   await mailTransport.sendMail({
     from: process.env.SMTP_FROM,
@@ -163,10 +153,8 @@ const updatePlayerStats = async (userId, isWinner, gameId) => {
 
 const normalizeEmail = (value) =>
   typeof value === "string" ? value.trim().toLowerCase() : "";
-
 const isValidEmail = (value) =>
   value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-
 const getRecoveryEmail = (user) => {
   const email = normalizeEmail(user.email);
   if (isValidEmail(email)) return email;
@@ -208,31 +196,24 @@ const authLimiter = rateLimit({
   limit: 10,
   standardHeaders: "draft-8",
   legacyHeaders: false,
-  message: { message: "Quá nhiều lần thử. Vui lòng đợi 15 phút rồi thử lại." },
 });
-
 const passwordResetRequestLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 3,
   standardHeaders: "draft-8",
   legacyHeaders: false,
-  message: { message: "Quá nhiều yêu cầu gửi mã. Vui lòng thử lại sau." },
 });
-
 const passwordResetVerifyLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 10,
   standardHeaders: "draft-8",
   legacyHeaders: false,
-  message: { message: "Quá nhiều lần nhập mã. Vui lòng thử lại sau." },
 });
-
 const passwordChangeLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 5,
   standardHeaders: "draft-8",
   legacyHeaders: false,
-  message: { message: "Quá nhiều lần đổi mật khẩu. Vui lòng thử lại sau." },
 });
 
 let matchmakingEnabled = true;
@@ -240,24 +221,18 @@ let matchmakingEnabled = true;
 const requireAuthenticatedUser = async (req, res, next) => {
   const authorization = req.get("authorization") || "";
   const [scheme, token] = authorization.split(/\s+/, 2);
-  if (scheme?.toLowerCase() !== "bearer" || !token) {
+  if (scheme?.toLowerCase() !== "bearer" || !token)
     return res.status(401).json({ message: "Vui lòng đăng nhập lại." });
-  }
 
   try {
     const payload = jwt.verify(token, JWT_SECRET);
-    if (typeof payload.userId !== "string") {
+    if (typeof payload.userId !== "string")
       return res.status(401).json({ message: "Phiên đăng nhập không hợp lệ." });
-    }
-
     const user = await User.findById(payload.userId);
-    if (!user || (payload.tokenVersion || 0) !== (user.tokenVersion || 0)) {
+    if (!user || (payload.tokenVersion || 0) !== (user.tokenVersion || 0))
       return res.status(401).json({ message: "Vui lòng đăng nhập lại." });
-    }
-    if (user.isBanned) {
+    if (user.isBanned)
       return res.status(403).json({ message: "Tài khoản đã bị tạm khóa." });
-    }
-
     req.authenticatedUser = user;
     return next();
   } catch {
@@ -268,20 +243,17 @@ const requireAuthenticatedUser = async (req, res, next) => {
 const ADMIN_USERNAMES = new Set(
   (process.env.ADMIN_USERNAMES || "")
     .split(",")
-    .map((username) => username.trim().toLowerCase())
+    .map((u) => u.trim().toLowerCase())
     .filter(Boolean),
 );
-
 const requireAdmin = (req, res, next) =>
   requireAuthenticatedUser(req, res, () => {
-    if (!ADMIN_USERNAMES.size) {
+    if (!ADMIN_USERNAMES.size)
       return res
         .status(503)
         .json({ message: "Chưa cấu hình tài khoản quản trị." });
-    }
-    if (!ADMIN_USERNAMES.has(req.authenticatedUser.username.toLowerCase())) {
+    if (!ADMIN_USERNAMES.has(req.authenticatedUser.username.toLowerCase()))
       return res.status(403).json({ message: "Bạn không có quyền quản trị." });
-    }
     return next();
   });
 
@@ -319,9 +291,8 @@ app.post("/api/reports", requireAuthenticatedUser, async (req, res) => {
   ) {
     return res.status(400).json({ message: "Thông tin báo cáo không hợp lệ." });
   }
-  if (mongoose.connection.readyState !== 1) {
+  if (mongoose.connection.readyState !== 1)
     return res.status(503).json({ message: "Cơ sở dữ liệu chưa sẵn sàng." });
-  }
   const report = await GameReport.create({
     matchId: matchId.trim(),
     reporterId: req.authenticatedUser._id,
@@ -390,12 +361,10 @@ const hashOAuthValue = (value) =>
 
 const createOAuthAuthorizationUrl = async (provider, purpose, req, user) => {
   const credentials = getOAuthCredentials(provider);
-  if (!credentials.clientId || !credentials.clientSecret) {
+  if (!credentials.clientId || !credentials.clientSecret)
     throw Object.assign(new Error("OAuth provider is not configured."), {
       code: "provider_not_configured",
     });
-  }
-
   const state = crypto.randomBytes(32).toString("base64url");
   await OAuthFlow.create({
     stateHash: hashOAuthValue(state),
@@ -405,7 +374,6 @@ const createOAuthAuthorizationUrl = async (provider, purpose, req, user) => {
     tokenVersion: user?.tokenVersion,
     expiresAt: new Date(Date.now() + 10 * 60_000),
   });
-
   const redirectUri = getOAuthCallbackUrl(provider, req);
   const authorizationUrl =
     provider === "google"
@@ -425,9 +393,7 @@ const createOAuthAuthorizationUrl = async (provider, purpose, req, user) => {
 const fetchOAuthProfile = async (provider, code, req) => {
   const credentials = getOAuthCredentials(provider);
   const redirectUri = getOAuthCallbackUrl(provider, req);
-  let tokenUrl;
-  let tokenOptions;
-
+  let tokenUrl, tokenOptions;
   if (provider === "google") {
     tokenUrl = "https://oauth2.googleapis.com/token";
     tokenOptions = {
@@ -451,18 +417,15 @@ const fetchOAuthProfile = async (provider, code, req) => {
     }).toString();
     tokenOptions = { method: "GET" };
   }
-
   const tokenResponse = await fetch(tokenUrl, {
     ...tokenOptions,
     signal: AbortSignal.timeout(15_000),
   });
   const tokenData = await tokenResponse.json().catch(() => ({}));
-  if (!tokenResponse.ok || !tokenData.access_token) {
+  if (!tokenResponse.ok || !tokenData.access_token)
     throw Object.assign(new Error("OAuth token exchange failed."), {
       code: "provider_exchange_failed",
     });
-  }
-
   const profileUrl =
     provider === "google"
       ? "https://openidconnect.googleapis.com/v1/userinfo"
@@ -473,12 +436,10 @@ const fetchOAuthProfile = async (provider, code, req) => {
   });
   const profile = await profileResponse.json().catch(() => ({}));
   const providerId = provider === "google" ? profile.sub : profile.id;
-  if (!profileResponse.ok || typeof providerId !== "string") {
+  if (!profileResponse.ok || typeof providerId !== "string")
     throw Object.assign(new Error("OAuth profile request failed."), {
       code: "provider_profile_failed",
     });
-  }
-
   const verifiedEmail =
     provider === "google" && profile.email_verified === true;
   return {
@@ -496,32 +457,26 @@ const getOrCreateOAuthUser = async (provider, profile) => {
   const providerField = provider === "google" ? "googleId" : "facebookId";
   let user = await User.findOne({ [providerField]: profile.id });
   if (user) return user;
-
   if (provider === "google" && profile.verifiedEmail && profile.email) {
     user = await User.findOne({ email: profile.email });
     if (user) {
-      if (user.googleId && user.googleId !== profile.id) {
+      if (user.googleId && user.googleId !== profile.id)
         throw Object.assign(new Error("Google account is already linked."), {
           code: "account_link_conflict",
         });
-      }
       user.googleId = profile.id;
       await user.save();
       return user;
     }
   }
-
-  if (profile.email && (await User.findOne({ email: profile.email }))) {
+  if (profile.email && (await User.findOne({ email: profile.email })))
     throw Object.assign(new Error("An account already uses this email."), {
       code: "account_requires_link",
     });
-  }
-
   const prefix = provider === "google" ? "g_" : "f_";
   let username = `${prefix}${profile.id}`.slice(0, 32);
-  if (await User.exists({ username })) {
+  if (await User.exists({ username }))
     username = `${prefix}${crypto.randomBytes(10).toString("hex")}`;
-  }
   const randomPassword = crypto.randomBytes(32).toString("hex");
   user = new User({
     username,
@@ -543,7 +498,6 @@ const oauthUserPayload = (user) => ({
   matches: user.matches,
   isDonor: Boolean(user.isDonor),
 });
-
 const oauthFlowLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 20,
@@ -608,9 +562,8 @@ app.post(
 app.get("/api/auth/:provider/callback", oauthFlowLimiter, async (req, res) => {
   const { provider } = req.params;
   const state = typeof req.query.state === "string" ? req.query.state : "";
-  if (!OAUTH_PROVIDERS.has(provider) || !state) {
+  if (!OAUTH_PROVIDERS.has(provider) || !state)
     return redirectToClient(res, { oauth_error: "invalid_oauth_state" });
-  }
 
   try {
     const flow = await OAuthFlow.findOneAndDelete({
@@ -619,27 +572,23 @@ app.get("/api/auth/:provider/callback", oauthFlowLimiter, async (req, res) => {
       purpose: { $in: ["login", "link"] },
       expiresAt: { $gt: new Date() },
     });
-    if (!flow) {
+    if (!flow)
       return redirectToClient(res, { oauth_error: "invalid_oauth_state" });
-    }
-    if (req.query.error || typeof req.query.code !== "string") {
+    if (req.query.error || typeof req.query.code !== "string")
       return redirectToClient(res, { oauth_error: "oauth_cancelled" });
-    }
 
     const profile = await fetchOAuthProfile(provider, req.query.code, req);
     const providerField = provider === "google" ? "googleId" : "facebookId";
 
     if (flow.purpose === "link") {
       const user = await User.findById(flow.userId);
-      if (!user || (flow.tokenVersion || 0) !== (user.tokenVersion || 0)) {
+      if (!user || (flow.tokenVersion || 0) !== (user.tokenVersion || 0))
         return redirectToClient(res, { oauth_error: "session_expired" });
-      }
       const linkedUser = await User.findOne({ [providerField]: profile.id });
-      if (linkedUser && !linkedUser._id.equals(user._id)) {
+      if (linkedUser && !linkedUser._id.equals(user._id))
         return redirectToClient(res, {
           oauth_error: "provider_already_linked",
         });
-      }
       user[providerField] = profile.id;
       await user.save();
       return redirectToClient(res, { oauth_linked: provider });
@@ -656,7 +605,6 @@ app.get("/api/auth/:provider/callback", oauthFlowLimiter, async (req, res) => {
     });
     return redirectToClient(res, { oauth_code: code });
   } catch (err) {
-    console.error("OAuth callback failed:", { provider, code: err.code });
     const oauthError =
       err.code === "account_requires_link"
         ? "account_requires_link"
@@ -669,26 +617,21 @@ app.get("/api/auth/:provider/callback", oauthFlowLimiter, async (req, res) => {
 
 app.post("/api/auth/exchange", oauthFlowLimiter, async (req, res) => {
   const { code } = req.body || {};
-  if (typeof code !== "string" || code.length > 100) {
+  if (typeof code !== "string" || code.length > 100)
     return res.status(400).json({ message: "Mã đăng nhập không hợp lệ." });
-  }
-
   try {
     const flow = await OAuthFlow.findOneAndDelete({
       codeHash: hashOAuthValue(code),
       purpose: "exchange",
       expiresAt: { $gt: new Date() },
     });
-    if (!flow) {
+    if (!flow)
       return res.status(400).json({ message: "Mã đăng nhập đã hết hạn." });
-    }
     const user = await User.findById(flow.userId);
     if (!user)
       return res.status(400).json({ message: "Tài khoản không tồn tại." });
-    if (user.isBanned) {
+    if (user.isBanned)
       return res.status(403).json({ message: "Tài khoản đã bị tạm khóa." });
-    }
-
     const token = jwt.sign(
       {
         userId: user._id.toString(),
@@ -700,7 +643,6 @@ app.post("/api/auth/exchange", oauthFlowLimiter, async (req, res) => {
     );
     return res.json({ token, user: oauthUserPayload(user) });
   } catch (err) {
-    console.error("OAuth code exchange failed:", err.message);
     return res.status(500).json({ message: "Không thể hoàn tất đăng nhập." });
   }
 });
@@ -724,18 +666,15 @@ app.post("/api/register", authLimiter, async (req, res) => {
         .status(400)
         .json({ message: "Thông tin đăng ký không hợp lệ." });
     }
-
     const normalizedUsername = username.trim();
     const normalizedDisplayName = displayName?.trim() || normalizedUsername;
-
     const existingUser = await User.findOne({
       $or: [{ username: normalizedUsername }, { email: normalizedEmail }],
     });
-    if (existingUser) {
+    if (existingUser)
       return res
         .status(400)
         .json({ message: "Tên tài khoản hoặc email đã được sử dụng!" });
-    }
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const newUser = new User({
@@ -745,7 +684,6 @@ app.post("/api/register", authLimiter, async (req, res) => {
       displayName: normalizedDisplayName,
     });
     await newUser.save();
-
     const token = jwt.sign(
       {
         userId: newUser._id.toString(),
@@ -753,9 +691,7 @@ app.post("/api/register", authLimiter, async (req, res) => {
         tokenVersion: newUser.tokenVersion,
       },
       JWT_SECRET,
-      {
-        expiresIn: "7d",
-      },
+      { expiresIn: "7d" },
     );
     res.json({
       token,
@@ -769,12 +705,10 @@ app.post("/api/register", authLimiter, async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("Register Error:", err);
-    if (err.code === 11000) {
+    if (err.code === 11000)
       return res
         .status(400)
         .json({ message: "Tên tài khoản hoặc email đã được sử dụng!" });
-    }
     res.status(500).json({ message: "Lỗi máy chủ!" });
   }
 });
@@ -788,30 +722,23 @@ app.post("/api/login", authLimiter, async (req, res) => {
       username.length > 32 ||
       typeof password !== "string" ||
       Buffer.byteLength(password, "utf8") > 72
-    ) {
+    )
       return res
         .status(400)
         .json({ message: "Tài khoản hoặc mật khẩu không đúng!" });
-    }
-
     const normalizedUsername = username.trim();
     const user = await User.findOne({ username: normalizedUsername });
-    if (!user) {
+    if (!user)
       return res
         .status(400)
         .json({ message: "Tài khoản hoặc mật khẩu không đúng!" });
-    }
-
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
+    if (!isMatch)
       return res
         .status(400)
         .json({ message: "Tài khoản hoặc mật khẩu không đúng!" });
-    }
-    if (user.isBanned) {
+    if (user.isBanned)
       return res.status(403).json({ message: "Tài khoản đã bị tạm khóa." });
-    }
-
     const token = jwt.sign(
       {
         userId: user._id.toString(),
@@ -833,7 +760,6 @@ app.post("/api/login", authLimiter, async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("Login Error:", err);
     res.status(500).json({ message: "Lỗi máy chủ!" });
   }
 });
@@ -855,26 +781,24 @@ app.post(
       newPassword.length < 8 ||
       Buffer.byteLength(newPassword, "utf8") > 72
     ) {
-      return res.status(400).json({
-        message: "Mật khẩu mới phải có ít nhất 8 ký tự và không quá 72 byte.",
-      });
+      return res
+        .status(400)
+        .json({
+          message: "Mật khẩu mới phải có ít nhất 8 ký tự và không quá 72 byte.",
+        });
     }
-
     try {
       if (
         hasPassword &&
         !(await bcrypt.compare(currentPassword, user.password))
-      ) {
+      )
         return res
           .status(400)
           .json({ message: "Mật khẩu hiện tại không chính xác." });
-      }
-      if (hasPassword && currentPassword === newPassword) {
-        return res.status(400).json({
-          message: "Mật khẩu mới phải khác mật khẩu hiện tại.",
-        });
-      }
-
+      if (hasPassword && currentPassword === newPassword)
+        return res
+          .status(400)
+          .json({ message: "Mật khẩu mới phải khác mật khẩu hiện tại." });
       const hashedPassword = await bcrypt.hash(newPassword, 10);
       const updatedUser = await User.findOneAndUpdate(
         {
@@ -893,10 +817,8 @@ app.post(
         },
         { new: true },
       );
-      if (!updatedUser) {
+      if (!updatedUser)
         return res.status(401).json({ message: "Vui lòng đăng nhập lại." });
-      }
-
       const token = jwt.sign(
         {
           userId: updatedUser._id.toString(),
@@ -906,53 +828,46 @@ app.post(
         JWT_SECRET,
         { expiresIn: "7d" },
       );
-      return res.json({
-        token,
-        message: "Đổi mật khẩu thành công.",
-      });
+      return res.json({ token, message: "Đổi mật khẩu thành công." });
     } catch (err) {
-      console.error("Password change failed:", err.message);
       return res.status(500).json({ message: "Lỗi máy chủ!" });
     }
   },
 );
 
 app.post("/api/forgot-password", async (req, res) => {
-  res.status(410).json({
-    message:
-      "Endpoint cũ đã ngừng hoạt động. Hãy dùng luồng gửi mã OTP qua email.",
-  });
+  res
+    .status(410)
+    .json({
+      message:
+        "Endpoint cũ đã ngừng hoạt động. Hãy dùng luồng gửi mã OTP qua email.",
+    });
 });
 
 app.post(
   "/api/password-reset/request",
   passwordResetRequestLimiter,
   async (req, res) => {
-    if (!emailDeliveryConfigured) {
-      return res.status(503).json({
-        message: "Dịch vụ email khôi phục chưa được cấu hình trên máy chủ.",
-      });
-    }
-
+    if (!emailDeliveryConfigured)
+      return res
+        .status(503)
+        .json({
+          message: "Dịch vụ email khôi phục chưa được cấu hình trên máy chủ.",
+        });
     const { username } = req.body || {};
     if (
       typeof username !== "string" ||
       !username.trim() ||
       username.length > 254
-    ) {
+    )
       return res.status(400).json({ message: "Tên tài khoản không hợp lệ." });
-    }
-
     const genericMessage =
       "Nếu tài khoản có email khôi phục, mã xác minh sẽ được gửi đến địa chỉ đó.";
-
     try {
       const user = await User.findOne({ username: username.trim() });
       if (!user) return res.json({ message: genericMessage });
-
       const email = getRecoveryEmail(user);
       if (!email) return res.json({ message: genericMessage });
-
       const now = new Date();
       const code = crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
       const updatedUser = await User.findOneAndUpdate(
@@ -978,7 +893,6 @@ app.post(
         { new: true },
       );
       if (!updatedUser) return res.json({ message: genericMessage });
-
       try {
         await sendPasswordResetEmail(email, code);
       } catch (err) {
@@ -993,20 +907,14 @@ app.post(
             },
           },
         );
-        console.error("Password reset email delivery failed:", {
-          code: err.code,
-          command: err.command,
-          responseCode: err.responseCode,
-          message: err.message,
-        });
-        return res.status(503).json({
-          message: "Không gửi được email lúc này. Vui lòng thử lại sau.",
-        });
+        return res
+          .status(503)
+          .json({
+            message: "Không gửi được email lúc này. Vui lòng thử lại sau.",
+          });
       }
-
       res.json({ message: genericMessage });
     } catch (err) {
-      console.error("Password reset request failed:", err.message);
       res.status(500).json({ message: "Lỗi máy chủ!" });
     }
   },
@@ -1026,12 +934,10 @@ app.post(
       typeof newPassword !== "string" ||
       newPassword.length < 8 ||
       Buffer.byteLength(newPassword, "utf8") > 72
-    ) {
+    )
       return res
         .status(400)
         .json({ message: "Thông tin xác minh không hợp lệ." });
-    }
-
     try {
       const user = await User.findOne({ username: username.trim() }).select(
         "+passwordResetOtpHash +passwordResetOtpExpiresAt +passwordResetOtpAttempts",
@@ -1043,12 +949,12 @@ app.post(
         !user.passwordResetOtpExpiresAt ||
         user.passwordResetOtpExpiresAt <= now ||
         (user.passwordResetOtpAttempts || 0) >= 5
-      ) {
-        return res.status(400).json({
-          message: "Mã không hợp lệ hoặc đã hết hạn. Hãy yêu cầu mã mới.",
-        });
-      }
-
+      )
+        return res
+          .status(400)
+          .json({
+            message: "Mã không hợp lệ hoặc đã hết hạn. Hãy yêu cầu mã mới.",
+          });
       const otpMatches = matchesPasswordResetCode(
         user._id,
         code,
@@ -1065,8 +971,7 @@ app.post(
           { $inc: { passwordResetOtpAttempts: 1 } },
           { new: true },
         ).select("+passwordResetOtpAttempts");
-
-        if (updatedUser?.passwordResetOtpAttempts >= 5) {
+        if (updatedUser?.passwordResetOtpAttempts >= 5)
           await User.updateOne(
             { _id: user._id },
             {
@@ -1078,13 +983,12 @@ app.post(
               },
             },
           );
-        }
-
-        return res.status(400).json({
-          message: "Mã không hợp lệ hoặc đã hết hạn. Hãy yêu cầu mã mới.",
-        });
+        return res
+          .status(400)
+          .json({
+            message: "Mã không hợp lệ hoặc đã hết hạn. Hãy yêu cầu mã mới.",
+          });
       }
-
       const hashedPassword = await bcrypt.hash(newPassword, 10);
       const updatedUser = await User.findOneAndUpdate(
         {
@@ -1105,17 +1009,15 @@ app.post(
         },
         { new: true },
       );
-
-      if (!updatedUser) {
-        return res.status(400).json({
-          message: "Mã không hợp lệ hoặc đã hết hạn. Hãy yêu cầu mã mới.",
-        });
-      }
-
+      if (!updatedUser)
+        return res
+          .status(400)
+          .json({
+            message: "Mã không hợp lệ hoặc đã hết hạn. Hãy yêu cầu mã mới.",
+          });
       io.in(`user:${user._id}`).disconnectSockets(true);
       res.json({ message: "Đặt lại mật khẩu thành công. Hãy đăng nhập lại." });
     } catch (err) {
-      console.error("Password reset verification failed:", err.message);
       res.status(500).json({ message: "Lỗi máy chủ!" });
     }
   },
@@ -1157,12 +1059,13 @@ app.get("/api/leaderboard", async (req, res) => {
       }),
     );
   } catch (err) {
-    console.error("Leaderboard Error:", err.message);
     res.json([]);
   }
 });
 
-// --- GAME SOCKET.IO LOGIC ---
+// ==========================================
+// --- GAME SOCKET.IO LOGIC (NÃO BỘ MỚI) ---
+// ==========================================
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: ALLOWED_ORIGINS, methods: ["GET", "POST"] },
@@ -1174,23 +1077,18 @@ io.use(async (socket, next) => {
     socket.data.userId = null;
     return next();
   }
-
   try {
     const payload = jwt.verify(token, JWT_SECRET);
-    if (typeof payload.userId !== "string") {
+    if (typeof payload.userId !== "string")
       return next(new Error("Token tài khoản không hợp lệ."));
-    }
-
     const user = await User.findById(payload.userId).select(
       "tokenVersion isBanned username displayName",
     );
-    if (!user || (payload.tokenVersion || 0) !== (user.tokenVersion || 0)) {
+    if (!user || (payload.tokenVersion || 0) !== (user.tokenVersion || 0))
       return next(
         new Error("Phiên đăng nhập đã bị thu hồi. Vui lòng đăng nhập lại."),
       );
-    }
     if (user.isBanned) return next(new Error("Tài khoản đã bị tạm khóa."));
-
     socket.data.userId = user._id.toString();
     socket.data.username = user.username;
     socket.data.displayName = user.displayName;
@@ -1204,7 +1102,6 @@ const getPlayerName = (value) =>
   typeof value === "string" && value.trim()
     ? value.trim().slice(0, 32)
     : "Phượt Thủ";
-
 const isSocketPayload = (value) =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 
@@ -1232,7 +1129,6 @@ app.use(
     },
   }),
 );
-
 app.use(
   "/api/economy",
   createEconomyRouter({
@@ -1246,9 +1142,10 @@ app.use(
   }),
 );
 
+// --- GAME LOGIC CONSTANTS ---
 const getModeSettings = (mode = "1v1") =>
   mode === "2v2"
-    ? { mode: "2v2", gridSize: 10, playerCount: 4 }
+    ? { mode: "2v2", gridSize: 12, playerCount: 4 }
     : { mode: "1v1", gridSize: 8, playerCount: 2 };
 
 const selectRandomShops = (mode = "1v1") => {
@@ -1266,7 +1163,6 @@ const selectRandomShops = (mode = "1v1") => {
   ];
   const pool4 = [
     { id: "quanoc", name: "Quán Ốc Quen", size: 4, icon: "/donuong.png" },
-    { id: "quannhau", name: "Khu Nhậu Vỉa Hè", size: 4, icon: "/quannhau.png" },
   ];
   const pool5 = [
     {
@@ -1276,11 +1172,20 @@ const selectRandomShops = (mode = "1v1") => {
       icon: "/quannhau.png",
     },
   ];
-
   const pickRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
-  return mode === "2v2"
-    ? [pickRandom(pool2), pickRandom(pool3), pickRandom(pool4), ...pool5]
-    : [pickRandom(pool2), pickRandom(pool3), pickRandom(pool4)];
+
+  if (mode === "2v2") {
+    // 2v2: 6 quán (chia sẻ chung trên bàn 12x12)
+    return [
+      pickRandom(pool2),
+      pickRandom(pool2),
+      pickRandom(pool3),
+      pickRandom(pool3),
+      pickRandom(pool4),
+      pickRandom(pool5),
+    ];
+  }
+  return [pickRandom(pool2), pickRandom(pool3), pickRandom(pool4)];
 };
 
 const generateBotBoard = (shops, gridSize = 8) => {
@@ -1292,20 +1197,16 @@ const generateBotBoard = (shops, gridSize = 8) => {
       const startIndex = Math.floor(Math.random() * board.length);
       let row = Math.floor(startIndex / gridSize);
       let col = startIndex % gridSize;
-
       if (isHorizontal && col + shop.size > gridSize)
         col = gridSize - shop.size;
       if (!isHorizontal && row + shop.size > gridSize)
         row = gridSize - shop.size;
-
       const adjustedIndex = row * gridSize + col;
       const indices = [];
-      for (let i = 0; i < shop.size; i++) {
+      for (let i = 0; i < shop.size; i++)
         indices.push(
           isHorizontal ? adjustedIndex + i : adjustedIndex + i * gridSize,
         );
-      }
-
       const isOverlap = indices.some((idx) => board[idx] !== null);
       if (!isOverlap) {
         indices.forEach((idx) => {
@@ -1318,23 +1219,17 @@ const generateBotBoard = (shops, gridSize = 8) => {
   return board;
 };
 
-// HÀM 3: Kiểm tra & làm sạch sơ đồ do client gửi lên.
-// - Đúng 3 quán của phòng, đúng số ô, nằm thẳng hàng liền nhau (ngang hoặc dọc)
-// - Xây lại bàn cờ từ đầu để loại bỏ mọi cờ "shot" do client tự gắn
 const sanitizeBoard = (board, shops, gridSize = 8) => {
   if (!Array.isArray(board) || board.length !== gridSize * gridSize)
     return null;
-
   const clean = Array(gridSize * gridSize).fill(null);
   const indicesByShop = {};
 
   for (let i = 0; i < gridSize * gridSize; i++) {
     const cell = board[i];
     if (cell === null || cell === undefined) continue;
-
     const shop = shops.find((s) => s.id === cell.shopId);
     if (!shop) return null;
-
     if (!indicesByShop[shop.id]) indicesByShop[shop.id] = [];
     indicesByShop[shop.id].push(i);
     clean[i] = { shopId: shop.id, icon: shop.icon, name: shop.name };
@@ -1343,7 +1238,6 @@ const sanitizeBoard = (board, shops, gridSize = 8) => {
   for (const shop of shops) {
     const idxs = indicesByShop[shop.id];
     if (!idxs || idxs.length !== shop.size) return null;
-
     const first = idxs[0];
     const last = idxs[idxs.length - 1];
     const isHorizontal =
@@ -1352,10 +1246,8 @@ const sanitizeBoard = (board, shops, gridSize = 8) => {
     const isVertical = idxs.every(
       (v, k) => k === 0 || v === idxs[k - 1] + gridSize,
     );
-
     if (!isHorizontal && !isVertical) return null;
   }
-
   return clean;
 };
 
@@ -1365,6 +1257,7 @@ const publicRoomPlayers = (room) =>
     name: player.name,
     team: player.team,
     ready: Boolean(player.ready),
+    isBot: Boolean(player.isBot),
     eliminated: Boolean(player.eliminated),
     connected: player.connected !== false,
   }));
@@ -1380,6 +1273,7 @@ const roomOverview = (room) => ({
   shops: room.shops,
   players: publicRoomPlayers(room),
   turn: room.turn,
+  surrenderVotes: room.surrenderVotes,
 });
 
 const emitRoomUpdate = (room) => {
@@ -1395,12 +1289,18 @@ const createGameRoom = (roomId, mode, players, options = {}) => {
     roomCode: options.roomCode || null,
     hostSocketId: options.hostSocketId || null,
     isPrivate: Boolean(options.isPrivate),
-    isBotRoom: Boolean(options.isBotRoom),
-    botSocketId: options.botSocketId || null,
+    isBotRoom: Boolean(options.isBotRoom), // Cờ chung cho phòng đánh bot (1v1)
     mode: settings.mode,
     gridSize: settings.gridSize,
     playerCount: settings.playerCount,
     players,
+    // CHUNG BÀN CỜ ĐỘI (SHARED TEAM BOARDS)
+    teamBoards: {
+      red: Array(settings.gridSize * settings.gridSize).fill(null),
+      blue: Array(settings.gridSize * settings.gridSize).fill(null),
+    },
+    teamReady: { red: false, blue: false },
+    surrenderVotes: { red: null, blue: null }, // Null: Chưa vote, Object: Đang vote { initiator, agree }
     shotLog: [],
     shops: selectRandomShops(settings.mode),
     gameState: options.waiting ? "WAITING_FRIEND" : "SETUP",
@@ -1429,14 +1329,60 @@ const notifyMatchFound = (room, message) => {
   });
 };
 
+// --- QUẢN LÝ TIMER AFK (SERVER-SIDE) ---
+const turnTimers = {};
+
+const clearTurnTimer = (roomId) => {
+  if (turnTimers[roomId]) {
+    clearTimeout(turnTimers[roomId]);
+    delete turnTimers[roomId];
+  }
+};
+
+const scheduleTurnTimer = (roomId, expectedTurnId, delay = 25000) => {
+  clearTurnTimer(roomId);
+  turnTimers[roomId] = setTimeout(() => {
+    forceRandomShot(roomId, expectedTurnId);
+  }, delay);
+};
+
+const forceRandomShot = async (roomId, expectedTurnId) => {
+  const room = activeRooms[roomId];
+  if (!room || room.gameState !== "PLAYING" || room.turn !== expectedTurnId)
+    return;
+  const shooter = room.players[expectedTurnId];
+  if (!shooter) return;
+
+  const enemyTeam = shooter.team === "red" ? "blue" : "red";
+  const targetBoard = room.teamBoards[enemyTeam];
+
+  const availableIndices = targetBoard
+    .map((cell, idx) => (cell?.shot ? null : idx))
+    .filter((idx) => idx !== null);
+  if (availableIndices.length === 0) return;
+
+  const targetIndex =
+    availableIndices[Math.floor(Math.random() * availableIndices.length)];
+  io.to(roomId).emit("receive_chat", {
+    sender: "Hệ thống",
+    text: `Quá thời gian! Hệ thống đã tự động bắn thay cho ${shooter.name}.`,
+    type: "ALL",
+    team: shooter.team,
+  });
+
+  await applyShot(room, expectedTurnId, enemyTeam, targetIndex);
+};
+
+// LƯỢT CHÉO CÁNH THEO ĐỒNG XU (A -> C -> B -> D)
 const getTurnOrder = (room) => {
   const redPlayers = Object.values(room.players).filter(
-    (player) => player.team === "red",
+    (p) => p.team === "red",
   );
   const bluePlayers = Object.values(room.players).filter(
-    (player) => player.team === "blue",
+    (p) => p.team === "blue",
   );
   const order = [];
+
   const firstTeam = Math.random() < 0.5 ? "red" : "blue";
   const firstPlayers = firstTeam === "red" ? redPlayers : bluePlayers;
   const secondPlayers = firstTeam === "red" ? bluePlayers : redPlayers;
@@ -1457,36 +1403,23 @@ const isBoardDestroyed = (board) =>
   board.every((cell) => !cell?.shopId || cell.shot === "HIT");
 
 const getWinningTeam = (room) => {
-  for (const team of ["red", "blue"]) {
-    const teamPlayers = Object.values(room.players).filter(
-      (player) => player.team === team,
-    );
-    if (
-      teamPlayers.length &&
-      teamPlayers.every((player) => player.eliminated)
-    ) {
-      return team === "red" ? "blue" : "red";
-    }
-  }
+  // Vì xài chung bàn cờ nên sập bàn cờ = Cả đội thua
+  if (isBoardDestroyed(room.teamBoards.red)) return "blue";
+  if (isBoardDestroyed(room.teamBoards.blue)) return "red";
   return null;
 };
 
-const getNextTurnId = (room, previousTurnId, keepTurn = false) => {
-  const currentPlayer = room.players[previousTurnId];
-  if (keepTurn && currentPlayer && !currentPlayer.eliminated) {
-    return previousTurnId;
+// AUTO-SETUP CHO BOT TRONG 2V2 NẾU CẢ ĐỘI LÀ BOT
+const autoSetupBotTeam = (room, team) => {
+  const teamPlayers = Object.values(room.players).filter(
+    (p) => p.team === team,
+  );
+  const allBots = teamPlayers.every((p) => p.isBot);
+  if (allBots) {
+    room.teamBoards[team] = generateBotBoard(room.shops, room.gridSize);
+    room.teamReady[team] = true;
+    teamPlayers.forEach((p) => (p.ready = true));
   }
-
-  for (let offset = 1; offset <= room.turnOrder.length; offset++) {
-    const index = (room.turnIndex + offset) % room.turnOrder.length;
-    const candidateId = room.turnOrder[index];
-    const candidate = room.players[candidateId];
-    if (candidate && !candidate.eliminated) {
-      room.turnIndex = index;
-      return candidateId;
-    }
-  }
-  return null;
 };
 
 const startRoomIfReady = (room) => {
@@ -1494,7 +1427,8 @@ const startRoomIfReady = (room) => {
   if (
     room.gameState !== "SETUP" ||
     players.length !== room.playerCount ||
-    !players.every((player) => player.ready)
+    !room.teamReady.red ||
+    !room.teamReady.blue
   ) {
     emitRoomUpdate(room);
     return false;
@@ -1506,31 +1440,30 @@ const startRoomIfReady = (room) => {
   room.turnOrder = getTurnOrder(room);
   room.turnIndex = 0;
   room.turn = room.turnOrder[room.turnIndex];
+
   io.to(room.roomId).emit("start_coin_flip", {
     firstTurnId: room.turn,
     firstTeam: room.players[room.turn]?.team,
     turnOrder: room.turnOrder,
     gameId: room.gameId,
   });
+
+  // Bắt đầu đồng hồ 25s đầu tiên sau khi xem xu (delay 4s)
+  setTimeout(() => {
+    if (activeRooms[room.roomId]?.gameState === "PLAYING") {
+      scheduleTurnTimer(room.roomId, room.turn, 25000);
+      if (room.players[room.turn]?.isBot) triggerBotShot(room.roomId);
+    }
+  }, 4000);
+
   return true;
 };
 
 const updateFinishedGameStats = async (room, winnerTeam) => {
-  if (room.isBotRoom) {
-    const human = Object.values(room.players).find((player) => !player.isBot);
-    if (human?.userId) {
-      await updatePlayerStats(
-        human.userId,
-        winnerTeam === human.team,
-        room.gameId,
-      );
-    }
-    return;
-  }
-
+  // Tính win/lose cho tất cả human trong phòng
   await Promise.all(
     Object.values(room.players)
-      .filter((player) => player.userId)
+      .filter((player) => !player.isBot && player.userId)
       .map((player) =>
         updatePlayerStats(
           player.userId,
@@ -1544,24 +1477,28 @@ const updateFinishedGameStats = async (room, winnerTeam) => {
 const broadcastGameOver = async (room, winnerTeam) => {
   if (room.gameState === "FINISHED") return;
   room.gameState = "FINISHED";
+  clearTurnTimer(room.roomId);
   room.finishedAt = new Date();
+
+  // Báo kết quả về client
   io.to(room.roomId).emit("game_over", {
     winnerTeam,
     shots: room.shotLog || [],
     winnerPlayerIds: Object.values(room.players)
-      .filter((player) => player.team === winnerTeam)
-      .map((player) => player.socketId),
+      .filter((p) => p.team === winnerTeam)
+      .map((p) => p.socketId),
     winnerBoards: Object.values(room.players)
-      .filter((player) => player.team === winnerTeam)
-      .map((player) => ({
-        name: player.name,
-        board: player.board.map((cell) =>
+      .filter((p) => p.team === winnerTeam)
+      .map((p) => ({
+        name: p.name, // Lấy đại 1 người làm hiển thị
+        board: room.teamBoards[p.team].map((cell) =>
           cell
             ? { shopId: cell.shopId || null, shot: cell.shot || null }
             : null,
         ),
       })),
   });
+
   if (mongoose.connection.readyState === 1) {
     try {
       await GameMatch.create({
@@ -1577,7 +1514,7 @@ const broadcastGameOver = async (room, winnerTeam) => {
           userId: player.userId || null,
           name: player.name,
           team: player.team,
-          board: (player.board || []).map((cell, index) => ({
+          board: room.teamBoards[player.team].map((cell, index) => ({
             index,
             shopId: cell?.shopId || null,
             shot: cell?.shot || null,
@@ -1596,10 +1533,9 @@ const broadcastGameOver = async (room, winnerTeam) => {
   }
 };
 
-const applyShot = async (room, shooterId, targetId, targetIndex) => {
+const applyShot = async (room, shooterId, targetTeam, targetIndex) => {
   const shooter = room.players[shooterId];
-  const target = room.players[targetId];
-  const targetBoard = target.board;
+  const targetBoard = room.teamBoards[targetTeam];
   const targetCell = targetBoard[targetIndex];
   const isHit = Boolean(targetCell?.shopId);
   let sunkShopId = null;
@@ -1616,20 +1552,30 @@ const applyShot = async (room, shooterId, targetId, targetIndex) => {
     targetBoard[targetIndex] = { shot: "MISS" };
   }
 
-  target.eliminated = isBoardDestroyed(targetBoard);
+  const isEnemyDestroyed = isBoardDestroyed(targetBoard);
+  if (isEnemyDestroyed) {
+    Object.values(room.players)
+      .filter((p) => p.team === targetTeam)
+      .forEach((p) => (p.eliminated = true));
+  }
+
   const winnerTeam = getWinningTeam(room);
-  const keepTurn = room.mode === "1v1" && isHit;
-  const nextTurnId = winnerTeam
-    ? null
-    : getNextTurnId(room, shooterId, keepTurn);
-  room.turn = nextTurnId;
+
+  let nextTurnId = room.turn;
+  if (!winnerTeam && !isHit) {
+    // Trượt -> Chuyển lượt người kế tiếp
+    room.turnIndex = (room.turnIndex + 1) % room.turnOrder.length;
+    nextTurnId = room.turnOrder[room.turnIndex];
+  }
+  room.turn = winnerTeam ? null : nextTurnId;
+
   room.shotLog ||= [];
   room.shotLog.push({
     sequence: room.shotLog.length + 1,
     shooterId: shooter.userId || null,
     shooterName: shooter.name,
-    targetId: target.userId || null,
-    targetName: target.name,
+    targetId: null, // Đã chuyển sang bắn vào Đội
+    targetName: `Đội ${targetTeam === "red" ? "Đỏ" : "Xanh"}`,
     targetIndex,
     result: sunkShopId ? "SUNK" : isHit ? "HIT" : "MISS",
     shopId: sunkShopId,
@@ -1638,7 +1584,7 @@ const applyShot = async (room, shooterId, targetId, targetIndex) => {
 
   io.to(room.roomId).emit("shot_result", {
     shooterId,
-    targetSocketId: targetId,
+    targetTeam,
     targetIndex,
     isHit,
     sunkShopId,
@@ -1647,35 +1593,38 @@ const applyShot = async (room, shooterId, targetId, targetIndex) => {
   });
 
   if (winnerTeam) {
+    clearTurnTimer(room.roomId);
     await broadcastGameOver(room, winnerTeam);
-  } else if (room.isBotRoom && nextTurnId === room.botSocketId) {
-    setTimeout(() => triggerBotShot(room.roomId), isHit ? 2500 : 1000);
+  } else {
+    scheduleTurnTimer(room.roomId, nextTurnId, 25000);
+    if (room.players[nextTurnId]?.isBot) {
+      setTimeout(() => triggerBotShot(room.roomId), isHit ? 2500 : 1000);
+    }
   }
 };
 
 const triggerBotShot = (roomId) => {
   const room = activeRooms[roomId];
-  if (!room || room.gameState !== "PLAYING" || room.turn !== room.botSocketId)
+  if (!room || room.gameState !== "PLAYING" || !room.players[room.turn]?.isBot)
     return;
 
-  const targetPlayers = Object.values(room.players).filter(
-    (player) =>
-      player.team !== room.players[room.botSocketId].team && !player.eliminated,
-  );
-  const targets = targetPlayers.flatMap((player) =>
-    player.board
-      .map((cell, index) =>
-        cell?.shot ? null : { socketId: player.socketId, index },
-      )
-      .filter(Boolean),
-  );
-  if (!targets.length) return;
+  const bot = room.players[room.turn];
+  const enemyTeam = bot.team === "red" ? "blue" : "red";
+  const targetBoard = room.teamBoards[enemyTeam];
 
-  const target = targets[Math.floor(Math.random() * targets.length)];
+  const availableIndices = targetBoard
+    .map((cell, idx) => (cell?.shot ? null : idx))
+    .filter((idx) => idx !== null);
+  if (availableIndices.length === 0) return;
+
+  const targetIndex =
+    availableIndices[Math.floor(Math.random() * availableIndices.length)];
+
+  // Gửi kính ngắm tạo áp lực
   io.to(roomId).emit("opponent_aiming", {
-    shooterId: room.botSocketId,
-    targetSocketId: target.socketId,
-    targetIndex: target.index,
+    shooterId: bot.socketId,
+    targetTeam: enemyTeam,
+    targetIndex: targetIndex,
   });
 
   setTimeout(() => {
@@ -1683,16 +1632,10 @@ const triggerBotShot = (roomId) => {
     if (
       !currentRoom ||
       currentRoom.gameState !== "PLAYING" ||
-      currentRoom.turn !== currentRoom.botSocketId
-    ) {
+      currentRoom.turn !== bot.socketId
+    )
       return;
-    }
-    applyShot(
-      currentRoom,
-      currentRoom.botSocketId,
-      target.socketId,
-      target.index,
-    );
+    applyShot(currentRoom, bot.socketId, enemyTeam, targetIndex);
   }, 1000);
 };
 
@@ -1703,18 +1646,22 @@ const resetRoomForRematch = (room) => {
   room.turn = null;
   room.turnOrder = [];
   room.turnIndex = 0;
+  room.teamBoards = {
+    red: Array(room.gridSize * room.gridSize).fill(null),
+    blue: Array(room.gridSize * room.gridSize).fill(null),
+  };
+  room.teamReady = { red: false, blue: false };
+  room.surrenderVotes = { red: null, blue: null };
 
   Object.values(room.players).forEach((p) => {
     p.rematch = false;
     p.eliminated = false;
-    if (room.isBotRoom && p.socketId === room.botSocketId) {
-      p.board = generateBotBoard(room.shops, room.gridSize);
-      p.ready = true;
-    } else {
-      p.board = [];
-      p.ready = false;
-    }
+    p.ready = Boolean(p.isBot);
   });
+
+  // Tự động setup lại nếu có đội full bot
+  autoSetupBotTeam(room, "red");
+  autoSetupBotTeam(room, "blue");
 };
 
 const removeFromMatchmaking = (socketId) => {
@@ -1731,19 +1678,29 @@ const removeFromMatchmaking = (socketId) => {
 const createMatchFromQueue = (mode, entries) => {
   const roomId = `match_${crypto.randomBytes(8).toString("hex")}`;
   const players = Object.fromEntries(
-    entries.map((entry, index) => [
-      entry.socketId,
-      {
-        socketId: entry.socketId,
-        name: entry.name,
-        userId: entry.userId,
-        team: index % 2 === 0 ? "red" : "blue",
-        board: [],
-        ready: false,
-        eliminated: false,
-        isBot: false,
-      },
-    ]),
+    entries.map((entry, index) => {
+      const team =
+        mode === "2v2"
+          ? index < 2
+            ? "red"
+            : "blue"
+          : index % 2 === 0
+            ? "red"
+            : "blue";
+      return [
+        entry.socketId,
+        {
+          socketId: entry.socketId,
+          name: entry.name,
+          userId: entry.userId,
+          team,
+          board: [],
+          ready: false,
+          eliminated: false,
+          isBot: false,
+        },
+      ];
+    }),
   );
   const room = createGameRoom(roomId, mode, players);
 
@@ -1756,7 +1713,7 @@ const createMatchFromQueue = (mode, entries) => {
   notifyMatchFound(
     room,
     mode === "2v2"
-      ? "Đã tìm đủ 4 phượt thủ! Hai đội sẵn sàng xếp quán."
+      ? "Đã tìm đủ 4 phượt thủ! Các đội hãy cùng xếp quán."
       : "Đã tìm thấy đối thủ! Sẵn sàng xếp quán.",
   );
 };
@@ -1786,11 +1743,8 @@ const startBotMatch = (entry) => {
       isBot: true,
     },
   };
-  const room = createGameRoom(roomId, "1v1", players, {
-    isBotRoom: true,
-    botSocketId,
-  });
-  players[botSocketId].board = generateBotBoard(room.shops, room.gridSize);
+  const room = createGameRoom(roomId, "1v1", players, { isBotRoom: true });
+  autoSetupBotTeam(room, "blue");
   entry.socket.join(roomId);
   notifyMatchFound(room, "Đã ghép trận cùng Cao Thủ AI!");
 };
@@ -1819,12 +1773,16 @@ const handleRoomDeparture = async (room, socketId) => {
     return;
   }
 
-  if (room.gameState === "SETUP") {
-    io.to(room.roomId).emit(
-      "opponent_left",
-      "Một người đã rời phòng trước khi trận bắt đầu. Hãy tạo trận mới.",
-    );
-    delete activeRooms[room.roomId];
+  if (room.gameState === "SETUP" || room.gameState === "PLAYING") {
+    // 2v2 Chung bàn cờ, một người thoát = cả đội đầu hàng (Lose)
+    clearTurnTimer(room.roomId);
+    io.to(room.roomId).emit("receive_chat", {
+      sender: "Hệ thống",
+      text: `Người chơi ${player.name} đã rời trận. Đội ${player.team === "red" ? "Đỏ" : "Xanh"} bị xử thua.`,
+      type: "ALL",
+    });
+    const winnerTeam = player.team === "red" ? "blue" : "red";
+    await broadcastGameOver(room, winnerTeam);
     return;
   }
 
@@ -1832,23 +1790,6 @@ const handleRoomDeparture = async (room, socketId) => {
     io.to(room.roomId).emit("opponent_left", "Người chơi đã rời phòng.");
     delete activeRooms[room.roomId];
     return;
-  }
-
-  player.eliminated = true;
-  player.connected = false;
-  const winnerTeam = getWinningTeam(room);
-  if (!winnerTeam && room.turn === socketId) {
-    room.turn = getNextTurnId(room, socketId, false);
-  }
-  io.to(room.roomId).emit("room_player_left", {
-    playerId: socketId,
-    players: publicRoomPlayers(room),
-    nextTurnId: room.turn,
-  });
-  if (winnerTeam) {
-    await broadcastGameOver(room, winnerTeam);
-  } else if (room.isBotRoom && room.turn === room.botSocketId) {
-    setTimeout(() => triggerBotShot(room.roomId), 1000);
   }
 };
 
@@ -1878,8 +1819,7 @@ const startSocialChallengeRoom = async (challenge) => {
     return null;
   }
 
-  let roomCode;
-  let roomId;
+  let roomCode, roomId;
   do {
     roomCode = Array.from(
       { length: 5 },
@@ -1914,10 +1854,11 @@ const startSocialChallengeRoom = async (challenge) => {
     roomCode,
     hostSocketId: senderSocket.id,
     isPrivate: true,
+    waiting: true,
   });
   senderSocket.join(roomId);
   recipientSocket.join(roomId);
-  notifyMatchFound(room, "Bạn bè đã nhận lời hẹn đấu. Hãy xếp quán!");
+  emitRoomUpdate(room);
   return { roomId, roomCode };
 };
 
@@ -1943,7 +1884,6 @@ io.on("connection", (socket) => {
   if (socket.data.userId) socket.join(`user:${socket.data.userId}`);
   console.log(`🔌 Người chơi kết nối: ${socket.id}`);
 
-  // Tìm đối thủ ghép ngẫu nhiên
   socket.on("tim_doi_thu", (data = {}) => {
     if (!isSocketPayload(data)) return;
     if (!matchmakingEnabled) {
@@ -1988,7 +1928,6 @@ io.on("connection", (socket) => {
 
   socket.on("cancel_search", () => {
     removeFromMatchmaking(socket.id);
-
     for (const [rid, r] of Object.entries(activeRooms)) {
       if (
         r.isPrivate &&
@@ -2001,7 +1940,6 @@ io.on("connection", (socket) => {
     }
   });
 
-  // --- CHẾ ĐỘ PHÒNG KÍN (MÃ HẺM) ---
   socket.on("create_private_room", (data = {}) => {
     if (!isSocketPayload(data)) return;
     if (!matchmakingEnabled) {
@@ -2034,48 +1972,93 @@ io.on("connection", (socket) => {
       isPrivate: true,
       waiting: true,
     });
-
     socket.join(roomId);
     socket.emit("private_room_created", {
       ...roomOverview(room),
-      message: `Đã tạo Hẻm Kín [${roomCode}]! Hãy gửi mã cho bạn bè.`,
+      message: `Đã tạo Hẻm Kín [${roomCode}]! Hãy gửi mã cho bạn bè hoặc Thêm Bot.`,
     });
     emitRoomUpdate(room);
   });
 
-  socket.on("set_private_mode", (data = {}) => {
+  // HOST QUẢN LÝ LOBBY
+  socket.on("add_bot", (data = {}) => {
     if (!isSocketPayload(data)) return;
     const room = activeRooms[data.roomId];
     if (
-      !room?.isPrivate ||
+      !room ||
       room.hostSocketId !== socket.id ||
       room.gameState !== "WAITING_FRIEND"
-    ) {
+    )
       return;
-    }
+    if (Object.keys(room.players).length >= room.playerCount) return;
 
-    const settings = getModeSettings(data.mode);
-    if (Object.keys(room.players).length > settings.playerCount) {
-      socket.emit(
-        "join_private_error",
-        "Phòng đang có quá nhiều người cho mode này.",
-      );
+    const targetTeam = data.team || "blue";
+    const botId = `bot_${crypto.randomBytes(4).toString("hex")}`;
+    room.players[botId] = {
+      socketId: botId,
+      name: `Bot ${crypto.randomInt(10, 99)} 🤖`,
+      userId: null,
+      team: targetTeam,
+      board: [],
+      ready: true,
+      eliminated: false,
+      isBot: true,
+    };
+    emitRoomUpdate(room);
+  });
+
+  socket.on("kick_player", (data = {}) => {
+    if (!isSocketPayload(data)) return;
+    const room = activeRooms[data.roomId];
+    if (
+      !room ||
+      room.hostSocketId !== socket.id ||
+      room.gameState !== "WAITING_FRIEND" ||
+      data.targetId === socket.id
+    )
       return;
-    }
-    room.mode = settings.mode;
-    room.gridSize = settings.gridSize;
-    room.playerCount = settings.playerCount;
-    room.shops = selectRandomShops(settings.mode);
-    if (Object.keys(room.players).length === room.playerCount) {
-      notifyMatchFound(room, "Chủ phòng đã đổi mode. Trận đấu bắt đầu!");
-    } else {
+
+    if (room.players[data.targetId]) {
+      if (!room.players[data.targetId].isBot)
+        io.to(data.targetId).emit(
+          "opponent_left",
+          "Bạn đã bị Chủ phòng mời ra khỏi sảnh.",
+        );
+      const s = io.sockets.sockets.get(data.targetId);
+      if (s) s.leave(room.roomId);
+      delete room.players[data.targetId];
       emitRoomUpdate(room);
     }
   });
 
+  socket.on("host_start_game", (data = {}) => {
+    if (!isSocketPayload(data)) return;
+    const room = activeRooms[data.roomId];
+    if (
+      !room ||
+      room.hostSocketId !== socket.id ||
+      room.gameState !== "WAITING_FRIEND"
+    )
+      return;
+    if (Object.keys(room.players).length !== room.playerCount) {
+      socket.emit("join_private_error", "Phòng chưa đủ người để bắt đầu.");
+      return;
+    }
+
+    // Auto setup nếu team chỉ toàn bot
+    autoSetupBotTeam(room, "red");
+    autoSetupBotTeam(room, "blue");
+
+    notifyMatchFound(
+      room,
+      room.mode === "2v2"
+        ? "Chủ phòng đã bắt đầu trận. Hãy cùng xếp quán!"
+        : "Chủ phòng đã bắt đầu trận. Sẵn sàng xếp quán.",
+    );
+  });
+
   socket.on("join_private_room", (data = {}) => {
     if (!isSocketPayload(data)) return;
-
     const now = Date.now();
     const recentJoinAttempts = (
       socket.data.privateRoomJoinAttempts || []
@@ -2092,7 +2075,6 @@ io.on("connection", (socket) => {
 
     const playerName = getPlayerName(data.name);
     const userId = socket.data.userId;
-
     if (typeof data.roomCode !== "string") {
       socket.emit("join_private_error", "Mã Hẻm không hợp lệ!");
       return;
@@ -2103,7 +2085,6 @@ io.on("connection", (socket) => {
       return;
     }
     const roomId = `private_${roomCode}`;
-
     const room = activeRooms[roomId];
 
     if (!room) {
@@ -2113,7 +2094,6 @@ io.on("connection", (socket) => {
       );
       return;
     }
-
     if (
       room.gameState !== "WAITING_FRIEND" ||
       Object.keys(room.players).length >= room.playerCount
@@ -2124,12 +2104,10 @@ io.on("connection", (socket) => {
       );
       return;
     }
-
     if (room.players[socket.id]) {
       socket.emit("join_private_error", "Bạn đã ở trong phòng này.");
       return;
     }
-
     if (
       userId &&
       Object.values(room.players).some((player) => player.userId === userId)
@@ -2147,7 +2125,6 @@ io.on("connection", (socket) => {
     const blueCount = Object.values(room.players).filter(
       (player) => player.team === "blue",
     ).length;
-
     room.players[socket.id] = {
       socketId: socket.id,
       name: playerName,
@@ -2160,9 +2137,6 @@ io.on("connection", (socket) => {
     };
     socket.join(roomId);
     emitRoomUpdate(room);
-    if (Object.keys(room.players).length === room.playerCount) {
-      notifyMatchFound(room, "Đã đủ người! Các đội sẵn sàng xếp quán.");
-    }
   });
 
   socket.on("swap_teams", (data = {}) => {
@@ -2170,20 +2144,12 @@ io.on("connection", (socket) => {
     const room = activeRooms[data.roomId];
     const player = room?.players[socket.id];
     const target = room?.players[data.targetSocketId];
-    if (
-      !room ||
-      !player ||
-      player.isBot ||
-      !["WAITING_FRIEND", "SETUP"].includes(room.gameState) ||
-      Object.values(room.players).some((entry) => entry.ready)
-    ) {
+    if (!room || !player || player.isBot || room.gameState !== "WAITING_FRIEND")
       return;
-    }
 
     if (target) {
-      if (player === target || player.team === target.team || target.isBot) {
+      if (player === target || player.team === target.team || target.isBot)
         return;
-      }
       [player.team, target.team] = [target.team, player.team];
     } else {
       const targetTeam = data.targetTeam;
@@ -2195,20 +2161,29 @@ io.on("connection", (socket) => {
         !["red", "blue"].includes(targetTeam) ||
         targetTeam === player.team ||
         targetTeamCount >= teamCapacity
-      ) {
+      )
         return;
-      }
       player.team = targetTeam;
     }
-
-    io.to(room.roomId).emit("teams_updated", {
-      players: publicRoomPlayers(room),
-      gameState: room.gameState,
-    });
     emitRoomUpdate(room);
   });
 
-  // Chốt vị trí quán (Sẵn sàng)
+  // --- CO-OP SETUP ĐỒNG BỘ REALTIME ---
+  socket.on("sync_team_board", (data = {}) => {
+    if (!isSocketPayload(data)) return;
+    const { roomId, board } = data;
+    const room = activeRooms[roomId];
+    if (!room || room.gameState !== "SETUP") return;
+
+    const player = room.players[socket.id];
+    if (!player || room.teamReady[player.team]) return; // Nếu đội đã chốt thì không cho sync nữa
+
+    const teammate = Object.values(room.players).find(
+      (p) => p.team === player.team && p.socketId !== socket.id && !p.isBot,
+    );
+    if (teammate) io.to(teammate.socketId).emit("team_board_synced", { board });
+  });
+
   socket.on("ready_place_shops", (data = {}) => {
     if (!isSocketPayload(data)) return;
     const { roomId } = data;
@@ -2217,40 +2192,40 @@ io.on("connection", (socket) => {
     if (!room || !room.players[socket.id]) {
       socket.emit(
         "opponent_left",
-        "Lỗi đồng bộ phòng! Vui lòng bấm Tìm Trận để vào lại hẻm mới.",
+        "Lỗi đồng bộ phòng! Vui lòng vào lại hẻm mới.",
       );
       return;
     }
-
-    // Chỉ được chốt sơ đồ ở giai đoạn xếp quán — không đổi bàn cờ giữa trận
     if (room.gameState !== "SETUP") return;
 
     const player = room.players[socket.id];
-    if (player.ready) return;
+    if (room.teamReady[player.team]) return; // Đội đã khóa bàn cờ
+
     const cleanBoard = sanitizeBoard(
       data.playerBoard,
       room.shops,
       room.gridSize,
     );
     if (!cleanBoard) {
-      socket.emit(
-        "board_rejected",
-        "Sơ đồ quán không hợp lệ! Hãy xếp đủ các quán rồi chốt lại.",
-      );
+      socket.emit("board_rejected", "Sơ đồ quán không hợp lệ!");
       return;
     }
 
-    player.board = cleanBoard;
-    player.ready = true;
-    const gameStarted = startRoomIfReady(room);
-    emitRoomUpdate(room);
+    // Khoá bàn cờ cho cả Team
+    room.teamBoards[player.team] = cleanBoard;
+    room.teamReady[player.team] = true;
+    Object.values(room.players).forEach((p) => {
+      if (p.team === player.team) p.ready = true;
+    });
 
-    if (gameStarted && room.isBotRoom && room.turn === room.botSocketId) {
-      setTimeout(() => triggerBotShot(roomId), 4000);
-    }
+    io.to(roomId).emit("receive_chat", {
+      sender: "Hệ thống",
+      text: `Đội ${player.team === "red" ? "Đỏ" : "Xanh"} đã dàn trận xong.`,
+      type: "ALL",
+    });
+    startRoomIfReady(room);
   });
 
-  // Bắn đạn
   socket.on("fire_shot", async (data = {}) => {
     if (!isSocketPayload(data)) return;
     const { roomId, targetIndex } = data;
@@ -2265,43 +2240,130 @@ io.on("connection", (socket) => {
       return;
 
     const shooter = room.players[socket.id];
-    const enemies = Object.values(room.players).filter(
-      (player) => player.team !== shooter.team && !player.eliminated,
-    );
-    const targetId = data.targetSocketId || enemies[0]?.socketId;
-    const target = room.players[targetId];
-    if (!target || target.team === shooter.team || target.eliminated) return;
-    if (target.board[targetIndex]?.shot) return;
+    const enemyTeam = shooter.team === "red" ? "blue" : "red";
+    if (room.teamBoards[enemyTeam][targetIndex]?.shot) return;
 
-    await applyShot(room, socket.id, targetId, targetIndex);
+    clearTurnTimer(roomId);
+    await applyShot(room, socket.id, enemyTeam, targetIndex);
   });
 
-  // Truyền tín hiệu ghim vị trí ngắm bắn cho đối thủ
   socket.on("aim_shot", (data = {}) => {
     if (!isSocketPayload(data)) return;
     const { roomId, targetIndex } = data;
     const room = activeRooms[roomId];
     if (!room || room.gameState !== "PLAYING" || room.turn !== socket.id)
       return;
-    const target = room.players[data.targetSocketId];
     if (
-      !target ||
-      target.team === room.players[socket.id].team ||
-      target.eliminated ||
       !Number.isInteger(targetIndex) ||
       targetIndex < 0 ||
       targetIndex >= room.gridSize * room.gridSize
     )
       return;
 
+    const shooter = room.players[socket.id];
+    const enemyTeam = shooter.team === "red" ? "blue" : "red";
+
     io.to(roomId).emit("opponent_aiming", {
       shooterId: socket.id,
-      targetSocketId: target.socketId,
+      targetTeam: enemyTeam,
       targetIndex,
     });
   });
 
-  // Tái đấu
+  // --- BỎ PHIẾU ĐẦU HÀNG (SURRENDER VOTE) ---
+  socket.on("surrender_request", (data = {}) => {
+    if (!isSocketPayload(data)) return;
+    const room = activeRooms[data.roomId];
+    if (!room || room.gameState !== "PLAYING") return;
+    const player = room.players[socket.id];
+    if (!player) return;
+
+    // Nếu là 1v1 hoặc có 1 mình (đồng đội là bot), xử thua luôn
+    const humanTeammates = Object.values(room.players).filter(
+      (p) => p.team === player.team && p.socketId !== socket.id && !p.isBot,
+    );
+
+    if (humanTeammates.length === 0) {
+      io.to(room.roomId).emit("receive_chat", {
+        sender: "Hệ thống",
+        text: `Người chơi ${player.name} đã chấp nhận thua cuộc.`,
+        type: "ALL",
+      });
+      const winnerTeam = player.team === "red" ? "blue" : "red";
+      broadcastGameOver(room, winnerTeam);
+    } else {
+      // 2v2: Tạo cuộc bình chọn
+      if (room.surrenderVotes[player.team]) return; // Đang vote rồi
+      room.surrenderVotes[player.team] = { initiator: socket.id, agree: 1 };
+
+      // Báo cho đồng đội
+      humanTeammates.forEach((p) => {
+        io.to(p.socketId).emit("surrender_vote_started", {
+          initiatorName: player.name,
+        });
+      });
+      io.to(room.roomId).emit("receive_chat", {
+        sender: "Hệ thống",
+        text: `Đội ${player.team === "red" ? "Đỏ" : "Xanh"} đang bỏ phiếu đầu hàng...`,
+        type: "ALL",
+      });
+    }
+  });
+
+  socket.on("surrender_vote", (data = {}) => {
+    if (!isSocketPayload(data)) return;
+    const room = activeRooms[data.roomId];
+    if (!room || room.gameState !== "PLAYING") return;
+    const player = room.players[socket.id];
+    const voteState = room.surrenderVotes[player?.team];
+
+    if (!player || !voteState || voteState.initiator === socket.id) return;
+
+    if (data.agree) {
+      io.to(room.roomId).emit("receive_chat", {
+        sender: "Hệ thống",
+        text: `Đội ${player.team === "red" ? "Đỏ" : "Xanh"} đã đồng ý đầu hàng.`,
+        type: "ALL",
+      });
+      const winnerTeam = player.team === "red" ? "blue" : "red";
+      broadcastGameOver(room, winnerTeam);
+    } else {
+      room.surrenderVotes[player.team] = null;
+      Object.values(room.players)
+        .filter((p) => p.team === player.team)
+        .forEach((p) => {
+          io.to(p.socketId).emit("surrender_vote_failed", {
+            message: "Đồng đội đã từ chối đầu hàng. Hãy chiến đấu tiếp!",
+          });
+        });
+    }
+  });
+
+  // --- KÊNH CHAT: ALL HOẶC TEAM ---
+  socket.on("send_chat", (data = {}) => {
+    if (!isSocketPayload(data)) return;
+    const { roomId, text, type } = data; // type: "ALL" | "TEAM"
+    const room = activeRooms[roomId];
+    const player = room?.players[socket.id];
+
+    if (player && typeof text === "string") {
+      const payload = {
+        sender: player.name,
+        text: text.slice(0, 200),
+        type: type || "ALL",
+        team: player.team,
+      };
+      if (type === "TEAM") {
+        Object.values(room.players).forEach((p) => {
+          if (p.team === player.team)
+            io.to(p.socketId).emit("receive_chat", payload);
+        });
+      } else {
+        io.to(roomId).emit("receive_chat", payload);
+      }
+    }
+  });
+
   socket.on("request_rematch", (data = {}) => {
     if (!isSocketPayload(data)) return;
     const { roomId } = data;
@@ -2310,12 +2372,8 @@ io.on("connection", (socket) => {
       return;
 
     room.players[socket.id].rematch = true;
+    const humans = Object.values(room.players).filter((p) => !p.isBot);
 
-    const humans = Object.values(room.players).filter(
-      (p) => !(room.isBotRoom && p.socketId === room.botSocketId),
-    );
-
-    // Phòng đấu Bot: Bot luôn đồng ý. Phòng người: cần cả hai bấm.
     if (humans.every((p) => p.rematch)) {
       resetRoomForRematch(room);
       io.to(roomId).emit("rematch_accepted", {
@@ -2331,43 +2389,24 @@ io.on("connection", (socket) => {
         .to(roomId)
         .emit(
           "opponent_requested_rematch",
-          "Đối thủ muốn tái đấu! Nhấn Chơi Lại để tham gia.",
+          "Có người chơi muốn tái đấu! Nhấn Chơi Lại để tham gia.",
         );
     }
   });
 
-  // Rời phòng chủ động (về sảnh) — báo đối thủ và giải tán phòng
   socket.on("leave_room", (data = {}) => {
     if (!isSocketPayload(data)) return;
     const { roomId } = data;
     const room = activeRooms[roomId];
     if (!room || !room.players[socket.id]) return;
-
     socket.leave(roomId);
     handleRoomDeparture(room, socket.id);
   });
 
-  // Chat
-  socket.on("send_chat", (data = {}) => {
-    if (!isSocketPayload(data)) return;
-    const { roomId, text } = data;
-    const room = activeRooms[roomId];
-    if (room && room.players[socket.id] && typeof text === "string") {
-      io.to(roomId).emit("receive_chat", {
-        sender: room.players[socket.id].name,
-        text: text.slice(0, 200),
-      });
-    }
-  });
-
-  // Xử lý Ngắt kết nối
   socket.on("disconnect", async () => {
     removeFromMatchmaking(socket.id);
-
     for (const [roomId, room] of Object.entries(activeRooms)) {
-      if (room.players[socket.id]) {
-        await handleRoomDeparture(room, socket.id);
-      }
+      if (room.players[socket.id]) await handleRoomDeparture(room, socket.id);
     }
   });
 });

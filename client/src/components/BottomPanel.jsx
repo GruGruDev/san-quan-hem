@@ -14,12 +14,13 @@ export default function BottomPanel({
   onReady,
   onSendChat,
   messages = [],
-  shops = DEFAULT_SHOPS, // NHẬN 3 QUÁN NGẪU NHIÊN TỪ APP TRUYỀN XUỐNG
+  shops = DEFAULT_SHOPS,
+  showChatToggle = false, // Prop mới từ App.jsx để bật/tắt nút kênh Chat
 }) {
   const [chatInput, setChatInput] = useState("");
+  const [chatType, setChatType] = useState("ALL"); // ALL | TEAM
   const chatEndRef = useRef(null);
 
-  // Tự động cuộn xuống tin nhắn mới nhất
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -31,29 +32,22 @@ export default function BottomPanel({
         typeof filterBadWords === "function"
           ? filterBadWords(chatInput.trim())
           : chatInput.trim();
-      onSendChat(cleanText);
+      onSendChat(cleanText, chatType);
       setChatInput("");
     }
   };
 
   const isSetup = gameState === "SETUP";
-
-  // Dùng danh sách shops (3 quán của trận) thay vì DEFAULT_SHOPS
   const currentShopObj = shops.find((s) => s.id === selectedShop) || shops[0];
-
-  // Kiểm tra số lượng quán đã đặt dựa trên 3 quán của trận đấu hiện tại
   const placedShopIds = new Set(myBoard.filter(Boolean).map((c) => c.shopId));
   const isAllPlaced = shops.every((s) => placedShopIds.has(s.id));
 
   return (
-    <div className="w-full max-w-md bg-slate-900 p-3 border-t border-slate-800 flex flex-col gap-2.5 rounded-b-2xl">
+    <div className="w-full max-w-md md:max-w-full bg-slate-900 p-3 border-t border-slate-800 flex flex-col gap-2.5 rounded-b-2xl md:rounded-bl-3xl md:rounded-br-none">
       {isSetup && (
         <div className="flex flex-col gap-2">
           {/* Thanh Chọn Quán Tinh Gọn */}
-          <div
-            className={`flex gap-2 justify-center items-center bg-slate-950 p-2 rounded-xl border border-slate-800 ${shops.length > 3 ? "flex-wrap" : ""}`}
-          >
-            {/* Render động 3 nút chọn quán */}
+          <div className="flex gap-2 justify-center items-center bg-slate-950 p-2 rounded-xl border border-slate-800 flex-wrap">
             {shops.map((shop) => {
               const isPlaced = placedShopIds.has(shop.id);
               const isSelected = selectedShop === shop.id;
@@ -62,7 +56,7 @@ export default function BottomPanel({
                 <button
                   key={shop.id}
                   onClick={() => onSelectShop(shop.id)}
-                  className={`relative ${shops.length > 3 ? "w-10 h-10" : "w-12 h-12"} shrink-0 rounded-xl p-1 flex items-center justify-center transition border-2 ${
+                  className={`relative w-10 h-10 shrink-0 rounded-xl p-1 flex items-center justify-center transition border-2 ${
                     isSelected
                       ? "bg-amber-500/20 border-amber-400 scale-105 shadow-md shadow-amber-500/20"
                       : isPlaced
@@ -75,13 +69,9 @@ export default function BottomPanel({
                     alt={shop.name}
                     className="w-full h-full object-contain"
                   />
-
-                  {/* Badge hiển thị độ dài quán */}
                   <span className="absolute -bottom-1 -right-1 bg-slate-950 text-amber-400 border border-slate-700 text-[10px] font-black px-1.5 py-0.5 rounded-full">
-                    {shop.size}ô
+                    {shop.size}
                   </span>
-
-                  {/* Icon Check đã đặt */}
                   {isPlaced && (
                     <span className="absolute -top-1 -left-1 bg-emerald-500 text-slate-950 text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow">
                       ✓
@@ -91,26 +81,25 @@ export default function BottomPanel({
               );
             })}
 
-            <div className="h-8 w-px bg-slate-800 mx-1" />
+            <div className="h-8 w-px bg-slate-800 mx-1 hidden md:block" />
 
-            {/* Nút Xoay Ngang / Dọc */}
-            <button
-              onClick={onRotate}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs px-3 py-2.5 rounded-xl shadow active:scale-95 transition flex items-center gap-1"
-            >
-              🔄 {orientation === "HORIZONTAL" ? "NGANG" : "DỌC"}
-            </button>
-
-            {/* Nút Đặt Lại */}
-            <button
-              onClick={onResetBoard}
-              className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs p-2.5 rounded-xl active:scale-95 transition"
-            >
-              ↩️
-            </button>
+            {/* Cụm Nút Xoay / Reset */}
+            <div className="flex gap-1">
+              <button
+                onClick={onRotate}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs px-3 py-2.5 rounded-xl shadow active:scale-95 transition flex items-center gap-1"
+              >
+                🔄 {orientation === "HORIZONTAL" ? "NGANG" : "DỌC"}
+              </button>
+              <button
+                onClick={onResetBoard}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs p-2.5 rounded-xl active:scale-95 transition"
+              >
+                ↩️
+              </button>
+            </div>
           </div>
 
-          {/* Nút ĐẶT QUÁN NÀY / SẮN SÀNG */}
           {!isAllPlaced ? (
             <button
               onClick={onConfirmPlaceShop}
@@ -124,14 +113,14 @@ export default function BottomPanel({
               onClick={onReady}
               className="w-full bg-linear-to-r from-emerald-500 to-teal-600 hover:brightness-110 text-white font-black py-3.5 rounded-xl shadow-lg active:scale-95 transition text-sm uppercase tracking-wider animate-pulse"
             >
-              🚀 SẴN SÀNG VÀO TRẬN!
+              🚀 ĐÃ XẾP XONG QUÁN!
             </button>
           )}
         </div>
       )}
 
       {/* Frame Chat Log */}
-      <div className="bg-slate-950 rounded-2xl p-2.5 h-28 flex flex-col justify-between border border-slate-800 shadow-inner">
+      <div className="bg-slate-950 rounded-2xl p-2.5 h-32 md:flex-1 flex flex-col justify-between border border-slate-800 shadow-inner">
         <div className="overflow-y-auto flex-1 text-[12px] flex flex-col gap-1.5 pr-1 font-sans">
           {Array.isArray(messages) &&
             messages.map((msg, idx) => (
@@ -140,10 +129,25 @@ export default function BottomPanel({
                 className={
                   msg.sender === "Hệ thống"
                     ? "text-amber-400/90 italic font-medium leading-relaxed"
-                    : "text-slate-200 leading-relaxed"
+                    : msg.type === "TEAM"
+                      ? "text-emerald-300 leading-relaxed"
+                      : "text-slate-200 leading-relaxed"
                 }
               >
-                <b className="text-amber-400 font-black">{msg.sender}:</b>{" "}
+                {msg.type === "TEAM" && (
+                  <span className="text-[9px] font-black mr-1 bg-emerald-950 border border-emerald-800 px-1 py-0.5 rounded text-emerald-400">
+                    [ĐỘI]
+                  </span>
+                )}
+                <b
+                  className={
+                    msg.type === "TEAM"
+                      ? "text-emerald-400 font-black"
+                      : "text-amber-400 font-black"
+                  }
+                >
+                  {msg.sender}:
+                </b>{" "}
                 <span className="break-all font-medium">
                   {typeof filterBadWords === "function"
                     ? filterBadWords(msg.text)
@@ -154,14 +158,33 @@ export default function BottomPanel({
           <div ref={chatEndRef} />
         </div>
 
-        <form onSubmit={handleSend} className="flex gap-1.5 mt-1.5">
+        <form onSubmit={handleSend} className="flex gap-1.5 mt-2">
+          {showChatToggle && (
+            <button
+              type="button"
+              onClick={() =>
+                setChatType((prev) => (prev === "ALL" ? "TEAM" : "ALL"))
+              }
+              className={`shrink-0 px-2 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition active:scale-95 border ${
+                chatType === "TEAM"
+                  ? "bg-emerald-950 border-emerald-700 text-emerald-400"
+                  : "bg-slate-800 border-slate-600 text-slate-300"
+              }`}
+            >
+              {chatType === "TEAM" ? "🏠 Đội" : "🌍 All"}
+            </button>
+          )}
           <input
             type="text"
-            placeholder="Gửi tin nhắn khịa..."
+            placeholder={
+              chatType === "TEAM"
+                ? "Chat với đồng đội..."
+                : "Gửi tin nhắn khịa..."
+            }
             value={chatInput}
             onChange={(e) => setChatInput(e.target.value)}
-            maxLength={50}
-            className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 transition"
+            maxLength={60}
+            className="flex-1 min-w-0 bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 transition"
           />
           <button
             type="submit"

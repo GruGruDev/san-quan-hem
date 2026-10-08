@@ -11,6 +11,7 @@ export default function LobbyScreen({
   onOpenDonate,
   onOpenPrivateRoom,
   onOpenCommunity,
+  onOpenTutorial, // THÊM PROP NÀY CHO NÚT HUẤN LUYỆN
   currentUser,
   onLogout,
   connectionError,
@@ -41,18 +42,16 @@ export default function LobbyScreen({
   return (
     <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-slate-950 select-none font-sans">
       <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden">
-        {/* HÌNH NỀN BG COZY VIỆT NAM (/bg.png) */}
+        {/* HÌNH NỀN BG COZY VIỆT NAM */}
         <div
           className="absolute inset-0 w-full h-full bg-cover bg-center transition-all duration-700"
           style={{ backgroundImage: `url('/bg.png')` }}
         >
-          {/* Lớp Overlay phủ màu ánh đèn vàng cozy về đêm */}
-          <div className="absolute inset-0 bg-linear-to-b from-slate-950/80 via-amber-950/40 to-slate-950/90 backdrop-blur-[1px]" />
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-950/80 via-amber-950/40 to-slate-950/90 backdrop-blur-[1px]" />
         </div>
 
         {/* HEADER BAR */}
         <div className="relative z-10 p-4 flex justify-between items-center px-4 pt-5">
-          {/* Nút Cài Đặt */}
           <button
             onClick={onOpenSettings}
             className="w-10 h-10 bg-slate-900/80 hover:bg-amber-900/60 border border-amber-500/40 rounded-2xl flex items-center justify-center shadow-lg active:scale-95 transition backdrop-blur-md group"
@@ -65,9 +64,8 @@ export default function LobbyScreen({
             />
           </button>
 
-          {/* Logo Bảng Hiệu */}
           <div className="text-center flex flex-col items-center">
-            <div className="bg-linear-to-r from-amber-500 via-yellow-400 to-amber-500 text-slate-950 text-[9px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-widest shadow mb-0.5">
+            <div className="bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 text-slate-950 text-[9px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-widest shadow mb-0.5">
               Góc Phố Ăn Vặt
             </div>
             <h1 className="text-xl font-black text-amber-300 tracking-wider uppercase drop-shadow-[0_2px_10px_rgba(245,158,11,0.5)]">
@@ -75,8 +73,15 @@ export default function LobbyScreen({
             </h1>
           </div>
 
-          {/* Cụm Nút Cửa Hàng + BXH + Hướng Dẫn */}
-          <div className="flex gap-1.5">
+          {/* Cụm Nút Chức Năng Mở Rộng */}
+          <div className="flex gap-1.5 flex-wrap justify-end max-w-[100px]">
+            <button
+              onClick={onOpenTutorial}
+              className="w-10 h-10 bg-emerald-950/80 hover:bg-emerald-900/80 border border-emerald-500/50 rounded-2xl flex items-center justify-center text-emerald-300 font-black text-base shadow-lg active:scale-95 transition backdrop-blur-md animate-pulse"
+              title="Huấn Luyện Tân Thủ"
+            >
+              🎓
+            </button>
             <button
               onClick={onOpenDonate}
               className="w-10 h-10 bg-cyan-950/80 hover:bg-cyan-900/80 border border-cyan-500/50 rounded-2xl flex items-center justify-center text-cyan-200 font-black text-base shadow-lg active:scale-95 transition backdrop-blur-md"
@@ -112,7 +117,6 @@ export default function LobbyScreen({
 
         {/* NỘI DUNG SẢNH CHỜ */}
         <div className="relative z-10 flex-1 p-5 flex flex-col items-center justify-between text-center">
-          {/* Bảng Đèn Cổ Động Trận Đấu */}
           <div className="w-full bg-slate-900/80 border border-amber-500/30 rounded-3xl p-4 backdrop-blur-md shadow-2xl flex flex-col items-center gap-2 mt-1">
             <div className="w-20 h-20 relative flex items-center justify-center">
               <img
@@ -127,7 +131,6 @@ export default function LobbyScreen({
                 alt="Icon"
               />
             </div>
-
             <h2 className="text-xl font-black text-amber-200 tracking-wide uppercase">
               ĐẠI CHIẾN ĂN VẶT
             </h2>
@@ -137,12 +140,10 @@ export default function LobbyScreen({
             </p>
           </div>
 
-          {/* KHU VỰC THÔNG TIN TÀI KHOẢN HOẶC ĐĂNG NHẬP */}
           <div className="w-full max-w-xs flex flex-col gap-3 my-auto">
             {currentUser ? (
               <div className="bg-slate-950/80 border-2 border-amber-500/40 rounded-2xl p-3 flex items-center justify-between backdrop-blur-md shadow-lg">
                 <div className="flex items-center gap-2.5">
-                  {/* Icon Rank Hẻm */}
                   <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-xl shadow-inner">
                     {userRank.icon}
                   </div>
@@ -153,7 +154,6 @@ export default function LobbyScreen({
                         <span
                           className="animate-pulse text-amber-300 drop-shadow-[0_0_6px_rgba(253,224,71,0.9)]"
                           title="Người ủng hộ Săn Quán Hẻm"
-                          aria-label="Người ủng hộ Săn Quán Hẻm"
                         >
                           ✨
                         </span>
@@ -187,13 +187,12 @@ export default function LobbyScreen({
               <button
                 type="button"
                 onClick={onOpenCommunity}
-                className="w-full border border-amber-500/40 bg-slate-950/80 px-3 py-2.5 text-xs font-black text-amber-200 transition hover:bg-amber-950/60"
+                className="w-full border border-amber-500/40 bg-slate-950/80 px-3 py-2.5 text-xs font-black text-amber-200 transition hover:bg-amber-950/60 rounded-xl"
               >
                 👥 HỒ SƠ · BẠN BÈ · LỊCH SỬ
               </button>
             )}
 
-            {/* FORM TÌM TRẬN & PHÒNG KÍN */}
             <form onSubmit={handleSubmit} className="flex flex-col gap-2.5">
               {connectionError && (
                 <p className="rounded-lg border border-rose-500/30 bg-rose-950/70 px-3 py-2 text-[10px] font-bold text-rose-200">
@@ -225,15 +224,14 @@ export default function LobbyScreen({
                     onClick={() => setSelectedMode(matchMode)}
                     className={`rounded-lg py-2 text-[11px] font-black transition ${selectedMode === matchMode ? "bg-amber-400 text-slate-950" : "text-slate-300 hover:bg-slate-800"}`}
                   >
-                    {matchMode} · {matchMode === "2v2" ? "10×10" : "8×8"}
+                    {matchMode} · {matchMode === "2v2" ? "12×12" : "8×8"}
                   </button>
                 ))}
               </div>
 
-              {/* Nút Bắt Đầu Tìm Trận Ngẫu Nhiên */}
               <button
                 type="submit"
-                className="group relative w-full h-14 rounded-2xl bg-linear-to-r from-amber-600 via-yellow-500 to-amber-600 p-0.5 shadow-[0_0_20px_rgba(245,158,11,0.4)] active:scale-95 transition-all duration-200"
+                className="group relative w-full h-14 rounded-2xl bg-gradient-to-r from-amber-600 via-yellow-500 to-amber-600 p-0.5 shadow-[0_0_20px_rgba(245,158,11,0.4)] active:scale-95 transition-all duration-200"
               >
                 <div className="w-full h-full bg-slate-950/20 rounded-[14px] flex items-center justify-center gap-2 group-hover:bg-transparent transition">
                   <span className="text-xl">🛵</span>
@@ -243,7 +241,6 @@ export default function LobbyScreen({
                 </div>
               </button>
 
-              {/* Nút Tạo Phòng / Nhập Mã Hẻm Kín */}
               <button
                 type="button"
                 onClick={onOpenPrivateRoom}
@@ -254,7 +251,6 @@ export default function LobbyScreen({
             </form>
           </div>
 
-          {/* FOOTER HIỂN THỊ VERSION */}
           <div className="flex items-center gap-2 text-[10px] text-amber-200/50 font-bold tracking-widest uppercase bg-slate-950/60 px-3 py-1 rounded-full border border-amber-500/10 backdrop-blur-sm">
             <span>☕ COZY STREET VIBE</span>
             <span>•</span>

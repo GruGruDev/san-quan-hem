@@ -13,6 +13,7 @@ import BottomPanel from "./components/BottomPanel";
 import CoinFlipOverlay from "./components/CoinFlipOverlay";
 import GameBoard from "./components/GameBoard";
 import Header from "./components/Header";
+import InteractiveTutorial from "./components/InteractiveTutorial";
 import LoadingScreen from "./components/LoadingScreen";
 import LobbyScreen from "./components/LobbyScreen";
 import ResultScreen from "./components/ResultScreen";
@@ -27,6 +28,7 @@ import GuideModal from "./components/Modals/GuideModal";
 import LeaderboardModal from "./components/Modals/LeaderboardModal";
 import PrivateRoomModal from "./components/Modals/PrivateRoomModal";
 import SettingsModal from "./components/Modals/SettingsModal";
+import SurrenderVoteModal from "./components/Modals/SurrenderVoteModal";
 
 // Kết nối Socket.IO
 const socket = io(SERVER_URL, {
@@ -51,28 +53,24 @@ const getOAuthCallbackAlert = () => {
     oauth_cancelled: "Bạn đã hủy đăng nhập bằng mạng xã hội.",
   };
 
-  if (linkedProvider) {
+  if (linkedProvider)
     return {
       show: true,
-      title: "Đã liên kết tài khoản",
-      message: `Đã liên kết ${providerName} với tài khoản.`,
+      title: "Đã liên kết",
+      message: `Đã liên kết ${providerName} thành công.`,
       type: "success",
     };
-  }
-  if (oauthError) {
+  if (oauthError)
     return {
       show: true,
       title: "Đăng nhập thất bại",
-      message:
-        errorMessages[oauthError] || "Không thể xác thực với nhà cung cấp.",
+      message: errorMessages[oauthError] || "Không thể xác thực.",
       type: "error",
     };
-  }
   return { show: false, title: "", message: "", type: "info" };
 };
 
 export default function App() {
-  // --- STATES TÀI KHOẢN ---
   const [currentUser, setCurrentUser] = useState(() => {
     const savedUser = localStorage.getItem("user");
     if (!savedUser) return null;
@@ -84,8 +82,10 @@ export default function App() {
     }
   });
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(
+    () => !localStorage.getItem("hasSeenTutorial"),
+  );
 
-  // --- STATES CÀI ĐẶT GAME ---
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [bgmVolume, setBgmVolume] = useState(0.4);
   const [sfxVolume, setSfxVolume] = useState(0.8);
@@ -97,13 +97,10 @@ export default function App() {
     soundRef.current = { soundEnabled, sfxVolume };
   }, [soundEnabled, sfxVolume]);
 
-  // --- HỆ THỐNG THÔNG BÁO CUSTOM (CUSTOM ALERT UI) ---
   const [customAlert, setCustomAlert] = useState(getOAuthCallbackAlert);
-  const showAlert = (title, message, type = "info") => {
+  const showAlert = (title, message, type = "info") =>
     setCustomAlert({ show: true, title, message, type });
-  };
 
-  // --- STATES QUẢN LÝ GAME ---
   const [appLoading, setAppLoading] = useState(true);
   const [searching, setSearching] = useState(false);
 
@@ -115,7 +112,6 @@ export default function App() {
   const [roomPlayers, setRoomPlayers] = useState([]);
   const [roomHostSocketId, setRoomHostSocketId] = useState(null);
   const [roomLobbyStatus, setRoomLobbyStatus] = useState(null);
-  const [selectedTargetId, setSelectedTargetId] = useState(null);
   const [connectionError, setConnectionError] = useState("");
   const gameConfigRef = useRef({ gridSize, team, mode });
   useEffect(() => {
@@ -129,17 +125,18 @@ export default function App() {
   }, [roomId]);
 
   const [activeShops, setActiveShops] = useState(SHOPS);
-
   const [selectedShop, setSelectedShop] = useState(SHOPS[0]?.id || "cavien");
   const [orientation, setOrientation] = useState("HORIZONTAL");
   const [previewIndex, setPreviewIndex] = useState(null);
   const [myBoard, setMyBoard] = useState(
     Array(BOARD_SIZES["1v1"] ** 2).fill(null),
   );
-  const [opponentHitsByPlayer, setOpponentHitsByPlayer] = useState({});
-  const [opponentSunkShopsByPlayer, setOpponentSunkShopsByPlayer] = useState(
-    {},
+
+  // Board Địch dùng chung (1 mảng duy nhất)
+  const [opponentHits, setOpponentHits] = useState(
+    Array(BOARD_SIZES["1v1"] ** 2).fill(null),
   );
+  const [opponentSunkShops, setOpponentSunkShops] = useState([]);
 
   const [isMyTurn, setIsMyTurn] = useState(false);
   const [shotPending, setShotPending] = useState(false);
@@ -152,6 +149,7 @@ export default function App() {
   const [winnerBoards, setWinnerBoards] = useState([]);
   const [gameId, setGameId] = useState(null);
   const [turnTimeLeft, setTurnTimeLeft] = useState(25);
+  const [surrenderVote, setSurrenderVote] = useState(null);
 
   const [messages, setMessages] = useState([]);
   const [showSettings, setShowSettings] = useState(false);
@@ -163,17 +161,6 @@ export default function App() {
   const [createdRoomCode, setCreatedRoomCode] = useState(null);
 
   const getToken = () => localStorage.getItem("token");
-  const opposingPlayers = roomPlayers.filter(
-    (player) => player.team !== team && !player.eliminated,
-  );
-  const targetSocketId = opposingPlayers.some(
-    (player) => player.socketId === selectedTargetId,
-  )
-    ? selectedTargetId
-    : opposingPlayers[0]?.socketId;
-  const opponentHits =
-    opponentHitsByPlayer[targetSocketId] ||
-    Array(gridSize * gridSize).fill(null);
 
   const refreshSocketAuth = () => {
     socket.auth = { token: getToken() };
@@ -188,10 +175,8 @@ export default function App() {
       !oauthCode &&
       !url.searchParams.has("oauth_linked") &&
       !url.searchParams.has("oauth_error")
-    ) {
+    )
       return;
-    }
-
     url.searchParams.delete("oauth_code");
     url.searchParams.delete("oauth_linked");
     url.searchParams.delete("oauth_error");
@@ -211,9 +196,8 @@ export default function App() {
       })
         .then(async (response) => {
           const data = await response.json();
-          if (!response.ok) {
+          if (!response.ok)
             throw new Error(data.message || "Không thể hoàn tất đăng nhập.");
-          }
           localStorage.setItem("token", data.token);
           localStorage.setItem("user", JSON.stringify(data.user));
           setCurrentUser(data.user);
@@ -236,9 +220,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (vibrate && recentShot && window.navigator.vibrate) {
+    if (vibrate && recentShot && window.navigator.vibrate)
       window.navigator.vibrate([100, 50, 100]);
-    }
   }, [recentShot, vibrate]);
 
   useEffect(() => {
@@ -246,28 +229,24 @@ export default function App() {
       stopBGM();
       return;
     }
-    if (gameState === "LOBBY") {
-      playBGM("lofi.mp3", soundEnabled, bgmVolume);
-    } else if (gameState === "SETUP" || gameState === "PLAYING") {
+    if (gameState === "LOBBY") playBGM("lofi.mp3", soundEnabled, bgmVolume);
+    else if (gameState === "SETUP" || gameState === "PLAYING")
       playBGM("soundstreet.mp3", soundEnabled, bgmVolume);
-    } else if (gameState === "FINISHED") {
-      stopBGM();
-    }
+    else if (gameState === "FINISHED") stopBGM();
   }, [gameState, soundEnabled, bgmVolume]);
 
   useEffect(() => {
-    if (gameState === "PLAYING" && turnTimeLeft === 5) {
+    if (gameState === "PLAYING" && turnTimeLeft === 5)
       playSFX("TurnTimer.mp3", soundEnabled, sfxVolume);
-    }
   }, [gameState, turnTimeLeft, soundEnabled, sfxVolume]);
 
   useEffect(() => {
     let timer = null;
-    if (gameState === "PLAYING" && turnTimeLeft > 0) {
-      timer = setInterval(() => {
-        setTurnTimeLeft((prev) => (prev <= 1 ? 0 : prev - 1));
-      }, 1000);
-    }
+    if (gameState === "PLAYING" && turnTimeLeft > 0)
+      timer = setInterval(
+        () => setTurnTimeLeft((prev) => (prev <= 1 ? 0 : prev - 1)),
+        1000,
+      );
     return () => clearInterval(timer);
   }, [gameState, turnTimeLeft]);
 
@@ -281,8 +260,8 @@ export default function App() {
   const resetGameData = (newShops = activeShops, newGridSize = gridSize) => {
     setGridSize(newGridSize);
     setMyBoard(Array(newGridSize * newGridSize).fill(null));
-    setOpponentHitsByPlayer({});
-    setOpponentSunkShopsByPlayer({});
+    setOpponentHits(Array(newGridSize * newGridSize).fill(null));
+    setOpponentSunkShops([]);
     setSelectedShop(newShops[0]?.id || "cavien");
     setOrientation("HORIZONTAL");
     setPreviewIndex(null);
@@ -297,16 +276,15 @@ export default function App() {
     setGameId(null);
     setTurnTimeLeft(25);
     setOpponentAimingIndex(null);
-    setSelectedTargetId(null);
+    setSurrenderVote(null);
   };
 
-  // --- SOCKET LISTENERS ---
   useEffect(() => {
     socket.auth = { token: getToken() };
     socket.on("connect", () => setConnectionError(""));
-    socket.on("connect_error", () => {
-      setConnectionError("Mất kết nối máy chủ. Đang thử kết nối lại...");
-    });
+    socket.on("connect_error", () =>
+      setConnectionError("Mất kết nối máy chủ. Đang thử kết nối lại..."),
+    );
     socket.connect();
 
     socket.on("match_found", (data) => {
@@ -319,7 +297,6 @@ export default function App() {
       setRoomLobbyStatus(null);
       setActiveShops(roomShops);
       resetGameData(roomShops, roomGridSize);
-
       setRoomId(data.roomId);
       setTeam(data.team);
       setGameState("SETUP");
@@ -327,15 +304,17 @@ export default function App() {
       setShowSocialHub(false);
       setShowPrivateModal(false);
       setCreatedRoomCode(null);
-      setMessages([{ sender: "Hệ thống", text: data.message }]);
+      setMessages([{ sender: "Hệ thống", text: data.message, type: "ALL" }]);
       setConnectionError("");
-      // Đóng hộp thoại alert nếu đang mở dở
       setCustomAlert((prev) => ({ ...prev, show: false }));
     });
 
-    socket.on("waiting_for_opponent", (msg) => {
-      setMessages((prev) => [...prev, { sender: "Hệ thống", text: msg }]);
-    });
+    socket.on("waiting_for_opponent", (msg) =>
+      setMessages((prev) => [
+        ...prev,
+        { sender: "Hệ thống", text: msg, type: "ALL" },
+      ]),
+    );
 
     socket.on("private_room_created", (data) => {
       setCreatedRoomCode(data.roomCode);
@@ -378,31 +357,29 @@ export default function App() {
       setRoomPlayers(data.players || []);
       setCurrentTurnId(data.nextTurnId);
       setIsMyTurn(data.nextTurnId === socket.id);
-      setMessages((prev) => [
-        ...prev,
-        { sender: "Hệ thống", text: "Một người chơi đã rời trận." },
-      ]);
     });
 
-    socket.on("join_private_error", (msg) => {
-      showAlert("Lỗi Hẻm Kín", msg, "error");
+    socket.on("team_board_synced", (data) => setMyBoard(data.board));
+    socket.on("surrender_vote_started", (data) => setSurrenderVote(data));
+    socket.on("surrender_vote_failed", (data) => {
+      setSurrenderVote(null);
+      showAlert("Bỏ phiếu thất bại", data.message, "info");
     });
-
-    socket.on("board_rejected", (msg) => {
-      showAlert("Sơ đồ bị từ chối", msg, "warning");
-    });
+    socket.on("join_private_error", (msg) =>
+      showAlert("Lỗi Hẻm Kín", msg, "error"),
+    );
+    socket.on("board_rejected", (msg) =>
+      showAlert("Sơ đồ bị từ chối", msg, "warning"),
+    );
 
     socket.on("start_coin_flip", (data) => {
       const { soundEnabled: sEnabled, sfxVolume: sVol } = soundRef.current;
       playSFX("coin-flip.mp3", sEnabled, sVol);
       setGameId(data.gameId || null);
-      const first =
-        gameConfigRef.current.mode === "2v2"
-          ? data.firstTeam === gameConfigRef.current.team
-          : data.firstTurnId === socket.id;
+      const first = data.firstTeam === gameConfigRef.current.team;
       setCoinFlipResult(first ? "FIRST" : "SECOND");
       setCurrentTurnId(data.firstTurnId);
-      setIsMyTurn(first);
+      setIsMyTurn(data.firstTurnId === socket.id);
       setTurnTimeLeft(25);
     });
 
@@ -412,43 +389,24 @@ export default function App() {
       const type = data.sunkShopId ? "SUNK" : data.isHit ? "HIT" : "MISS";
       if (data.players) setRoomPlayers(data.players);
 
-      if (data.sunkShopId) {
-        playSFX("success jingle.mp3", sEnabled, sVol);
-      } else if (data.isHit) {
-        playSFX("pop.mp3", sEnabled, sVol);
-      } else {
-        playSFX("waterdrop.mp3", sEnabled, sVol * 0.7);
-      }
+      if (data.sunkShopId) playSFX("success jingle.mp3", sEnabled, sVol);
+      else if (data.isHit) playSFX("pop.mp3", sEnabled, sVol);
+      else playSFX("waterdrop.mp3", sEnabled, sVol * 0.7);
 
       const textList = TAUNT_TEXTS[type] || TAUNT_TEXTS.MISS;
       const randomText = textList[Math.floor(Math.random() * textList.length)];
-
       setRecentShot({ index: data.targetIndex, type, text: randomText });
       setCurrentTurnId(data.nextTurnId);
 
-      const targetPlayer = data.players?.find(
-        (player) => player.socketId === data.targetSocketId,
-      );
-      if (targetPlayer?.team !== gameConfigRef.current.team) {
-        setOpponentHitsByPlayer((prev) => {
-          const nextBoard = [
-            ...(prev[data.targetSocketId] ||
-              Array(gameConfigRef.current.gridSize ** 2).fill(null)),
-          ];
-          nextBoard[data.targetIndex] = data.isHit ? "HIT" : "MISS";
-          return { ...prev, [data.targetSocketId]: nextBoard };
+      if (data.targetTeam !== gameConfigRef.current.team) {
+        setOpponentHits((prev) => {
+          const next = [...prev];
+          next[data.targetIndex] = data.isHit ? "HIT" : "MISS";
+          return next;
         });
-        if (data.sunkShopId) {
-          setOpponentSunkShopsByPlayer((prev) => ({
-            ...prev,
-            [data.targetSocketId]: [
-              ...(prev[data.targetSocketId] || []),
-              data.sunkShopId,
-            ],
-          }));
-        }
-      }
-      if (data.targetSocketId === socket.id) {
+        if (data.sunkShopId)
+          setOpponentSunkShops((prev) => [...prev, data.sunkShopId]);
+      } else {
         setMyBoard((prev) => {
           const next = [...prev];
           const currentCell = next[data.targetIndex];
@@ -471,14 +429,11 @@ export default function App() {
       }, 1500);
     });
 
-    socket.on("receive_chat", (data) => {
-      setMessages((prev) => [...prev, data]);
-    });
-
+    socket.on("receive_chat", (data) => setMessages((prev) => [...prev, data]));
     socket.on("opponent_aiming", (data) => {
       const targetIndex = data?.targetIndex;
       setOpponentAimingIndex(
-        data?.targetSocketId === socket.id &&
+        data?.targetTeam === gameConfigRef.current.team &&
           Number.isInteger(targetIndex) &&
           targetIndex >= 0 &&
           targetIndex < gameConfigRef.current.gridSize ** 2
@@ -491,20 +446,22 @@ export default function App() {
       const { soundEnabled: sEnabled, sfxVolume: sVol } = soundRef.current;
       shotPendingRef.current = false;
       setShotPending(false);
+      setSurrenderVote(null);
       setWinner(data.winnerTeam);
       setWinnerBoards(data.winnerBoards || []);
       setGameState("FINISHED");
-      if (data.winnerTeam === gameConfigRef.current.team) {
+      if (data.winnerTeam === gameConfigRef.current.team)
         playSFX("success jingle.mp3", sEnabled, sVol);
-      }
     });
 
     socket.on("opponent_requested_rematch", (msg) => {
-      setMessages((prev) => [...prev, { sender: "Hệ thống", text: msg }]);
-      // Dùng Custom Alert để thay cho alert() xấu xí
+      setMessages((prev) => [
+        ...prev,
+        { sender: "Hệ thống", text: msg, type: "ALL" },
+      ]);
       showAlert(
-        "Đối Thủ Thách Đấu",
-        "🔥 ĐỐI THỦ MUỐN PHỤC THÙ!\n\nHãy nhấn nút 'CHƠI LẠI VỚI ĐỐI THỦ' để nghênh chiến ngay!",
+        "Đồng Đội/Đối Thủ Thách Đấu",
+        "🔥 MỌI NGƯỜI MUỐN CHƠI LẠI!\n\nHãy nhấn nút 'CHƠI LẠI' để nghênh chiến ngay!",
         "warning",
       );
     });
@@ -517,17 +474,16 @@ export default function App() {
       setActiveShops(newShops);
       resetGameData(newShops, data.gridSize || BOARD_SIZES[roomMode]);
       setGameState("SETUP");
-      setMessages([{ sender: "Hệ thống", text: data.message }]);
-      setCustomAlert((prev) => ({ ...prev, show: false })); // Tắt popup
+      setMessages([{ sender: "Hệ thống", text: data.message, type: "ALL" }]);
+      setCustomAlert((prev) => ({ ...prev, show: false }));
     });
 
     socket.on("opponent_left", (message) => {
-      // Đổi Alert thành Custom Toast bự
       showAlert(
-        "Đối Thủ Rời Sảnh",
+        "Thông báo",
         typeof message === "string"
           ? message
-          : "Đối thủ đã rời đi hoặc ngắt kết nối. Vui lòng quay về sảnh tìm đối thủ mới!",
+          : "Phòng đã bị giải tán hoặc đối thủ rời đi.",
         "error",
       );
       setGameState("LOBBY");
@@ -538,7 +494,6 @@ export default function App() {
       setRoomPlayers([]);
       setRoomHostSocketId(null);
       setRoomLobbyStatus(null);
-      setSelectedTargetId(null);
       setMessages([]);
     });
 
@@ -551,6 +506,9 @@ export default function App() {
       socket.off("room_lobby_update");
       socket.off("teams_updated");
       socket.off("room_player_left");
+      socket.off("team_board_synced");
+      socket.off("surrender_vote_started");
+      socket.off("surrender_vote_failed");
       socket.off("join_private_error");
       socket.off("board_rejected");
       socket.off("start_coin_flip");
@@ -563,9 +521,8 @@ export default function App() {
       socket.off("opponent_left");
       socket.disconnect();
     };
-  }, []); // Vẫn giữ mảng rỗng để không bị reconnect vòng lặp
+  }, []);
 
-  // --- HANDLERS ---
   const handleFindMatch = (name, selectedMode) => {
     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
     setPlayerName(name);
@@ -573,13 +530,11 @@ export default function App() {
     setSearching(true);
     socket.emit("tim_doi_thu", { name, mode: selectedMode });
   };
-
   const handleCancelSearch = () => {
     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
     setSearching(false);
     socket.emit("cancel_search");
   };
-
   const handleCreatePrivateRoom = (selectedMode) => {
     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
     socket.emit("create_private_room", {
@@ -587,23 +542,18 @@ export default function App() {
       mode: selectedMode,
     });
   };
-
-  const handleChangePrivateMode = (selectedMode) => {
+  const handleChangePrivateMode = (selectedMode) =>
     socket.emit("set_private_mode", {
       roomId: roomIdRef.current,
       mode: selectedMode,
     });
-  };
-
-  const handleSwapTeams = (targetSocketId) => {
+  const handleSwapTeams = (targetSocketId) =>
     socket.emit("swap_teams", {
       roomId: roomIdRef.current,
       ...(targetSocketId === "red" || targetSocketId === "blue"
         ? { targetTeam: targetSocketId }
         : { targetSocketId }),
     });
-  };
-
   const handleJoinPrivateRoom = (code) => {
     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
     socket.emit("join_private_room", {
@@ -611,7 +561,6 @@ export default function App() {
       name: currentUser?.displayName || playerName || "Phượt Thủ Hẻm",
     });
   };
-
   const handleCancelPrivateRoom = () => {
     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
     setCreatedRoomCode(null);
@@ -620,13 +569,18 @@ export default function App() {
     setShowPrivateModal(false);
     socket.emit("cancel_search");
   };
+  const handleAddBot = (targetTeam) =>
+    socket.emit("add_bot", { roomId: roomIdRef.current, team: targetTeam });
+  const handleKickPlayer = (targetId) =>
+    socket.emit("kick_player", { roomId: roomIdRef.current, targetId });
+  const handleHostStartGame = () =>
+    socket.emit("host_start_game", { roomId: roomIdRef.current });
 
   const handleRotate = () => {
     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
     const nextOrientation =
       orientation === "HORIZONTAL" ? "VERTICAL" : "HORIZONTAL";
     setOrientation(nextOrientation);
-
     const currentShopObj = activeShops.find((s) => s.id === selectedShop);
     if (!currentShopObj) return;
 
@@ -638,22 +592,17 @@ export default function App() {
       let col = placedIndex % gridSize;
       const size = currentShopObj.size;
       const isHorizontal = nextOrientation === "HORIZONTAL";
-
       if (isHorizontal && col + size > gridSize) col = gridSize - size;
       if (!isHorizontal && row + size > gridSize) row = gridSize - size;
-
       const adjustedIndex = row * gridSize + col;
       const newIndices = [];
-      for (let i = 0; i < size; i++) {
+      for (let i = 0; i < size; i++)
         newIndices.push(
           isHorizontal ? adjustedIndex + i : adjustedIndex + i * gridSize,
         );
-      }
-
-      const isOverlap = newIndices.some((idx) => {
-        const cell = myBoard[idx];
-        return cell !== null && cell.shopId !== selectedShop;
-      });
+      const isOverlap = newIndices.some(
+        (idx) => myBoard[idx] !== null && myBoard[idx].shopId !== selectedShop,
+      );
 
       if (!isOverlap) {
         const newBoard = myBoard.map((cell) =>
@@ -668,6 +617,11 @@ export default function App() {
         });
         setMyBoard(newBoard);
         setPreviewIndex(adjustedIndex);
+        if (gameConfigRef.current.mode === "2v2")
+          socket.emit("sync_team_board", {
+            roomId: roomIdRef.current,
+            board: newBoard,
+          });
       }
     }
   };
@@ -675,30 +629,24 @@ export default function App() {
   const handleConfirmPlaceShop = () => {
     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
     if (previewIndex === null) return;
-
     const currentShopObj =
       activeShops.find((s) => s.id === selectedShop) || activeShops[0];
     const size = currentShopObj.size;
     const isHorizontal = orientation === "HORIZONTAL";
-
     let row = Math.floor(previewIndex / gridSize);
     let col = previewIndex % gridSize;
 
     if (isHorizontal && col + size > gridSize) col = gridSize - size;
     if (!isHorizontal && row + size > gridSize) row = gridSize - size;
-
     const adjustedIndex = row * gridSize + col;
     const indices = [];
-    for (let i = 0; i < size; i++) {
+    for (let i = 0; i < size; i++)
       indices.push(
         isHorizontal ? adjustedIndex + i : adjustedIndex + i * gridSize,
       );
-    }
-
-    const isOverlap = indices.some((idx) => {
-      const cell = myBoard[idx];
-      return cell !== null && cell.shopId !== selectedShop;
-    });
+    const isOverlap = indices.some(
+      (idx) => myBoard[idx] !== null && myBoard[idx].shopId !== selectedShop,
+    );
 
     if (!isOverlap) {
       const newBoard = myBoard.map((cell) =>
@@ -713,21 +661,30 @@ export default function App() {
       });
       setMyBoard(newBoard);
       setPreviewIndex(null);
+      if (gameConfigRef.current.mode === "2v2")
+        socket.emit("sync_team_board", {
+          roomId: roomIdRef.current,
+          board: newBoard,
+        });
 
       const placedShopIds = new Set(
         newBoard.filter(Boolean).map((c) => c.shopId),
       );
       const nextShop = activeShops.find((s) => !placedShopIds.has(s.id));
-      if (nextShop) {
-        setSelectedShop(nextShop.id);
-      }
+      if (nextShop) setSelectedShop(nextShop.id);
     }
   };
 
   const handleResetBoard = () => {
     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
-    setMyBoard(Array(gridSize * gridSize).fill(null));
+    const emptyBoard = Array(gridSize * gridSize).fill(null);
+    setMyBoard(emptyBoard);
     setPreviewIndex(null);
+    if (gameConfigRef.current.mode === "2v2")
+      socket.emit("sync_team_board", {
+        roomId: roomIdRef.current,
+        board: emptyBoard,
+      });
   };
 
   const handleReady = () => {
@@ -748,7 +705,11 @@ export default function App() {
     });
     setMessages((prev) => [
       ...prev,
-      { sender: "Hệ thống", text: "Đã chốt sơ đồ! Đang chờ đối thủ..." },
+      {
+        sender: "Hệ thống",
+        text: "Đã chốt sơ đồ! Đang chờ đối thủ...",
+        type: "ALL",
+      },
     ]);
   };
 
@@ -758,39 +719,27 @@ export default function App() {
       gameState !== "PLAYING" ||
       recentShot !== null ||
       shotPendingRef.current
-    ) {
+    )
       return;
-    }
     if (opponentHits[targetIndex] !== null) return;
-    if (!targetSocketId) return;
-
     shotPendingRef.current = true;
     setShotPending(true);
     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.5);
-    socket.emit("fire_shot", {
-      roomId: roomIdRef.current,
-      targetSocketId,
-      targetIndex,
-    });
-  };
-  const handleAimShot = (targetIndex) => {
-    if (
-      !isMyTurn ||
-      gameState !== "PLAYING" ||
-      !targetSocketId ||
-      shotPendingRef.current
-    ) {
-      return;
-    }
-    socket.emit("aim_shot", {
-      roomId: roomIdRef.current,
-      targetSocketId,
-      targetIndex,
-    });
+    socket.emit("fire_shot", { roomId: roomIdRef.current, targetIndex });
   };
 
-  const handleSendChat = (text) => {
-    socket.emit("send_chat", { roomId: roomIdRef.current, text });
+  const handleAimShot = (targetIndex) => {
+    if (!isMyTurn || gameState !== "PLAYING" || shotPendingRef.current) return;
+    socket.emit("aim_shot", { roomId: roomIdRef.current, targetIndex });
+  };
+
+  const handleSendChat = (text, type = "ALL") =>
+    socket.emit("send_chat", { roomId: roomIdRef.current, text, type });
+  const handleSurrender = () =>
+    socket.emit("surrender_request", { roomId: roomIdRef.current });
+  const handleSurrenderVote = (agree) => {
+    socket.emit("surrender_vote", { roomId: roomIdRef.current, agree });
+    setSurrenderVote(null);
   };
 
   const handleRematch = () => {
@@ -798,7 +747,7 @@ export default function App() {
     socket.emit("request_rematch", { roomId: roomIdRef.current });
     showAlert(
       "Chờ phản hồi",
-      "⏳ Đã gửi lời thách đấu!\n\nĐang chờ đối thủ đồng ý...",
+      "⏳ Đã gửi lời thách đấu!\n\nĐang chờ mọi người đồng ý...",
       "info",
     );
   };
@@ -825,9 +774,8 @@ export default function App() {
       body: JSON.stringify({ gameId, reportedPlayer, reason, matchId: gameId }),
     });
     const result = await response.json().catch(() => ({}));
-    if (!response.ok) {
+    if (!response.ok)
       throw new Error(result.message || "Không gửi được báo cáo.");
-    }
     showAlert(
       "Đã nhận báo cáo",
       "Báo cáo trận đã được gửi để quản trị viên xem xét.",
@@ -851,11 +799,12 @@ export default function App() {
   return (
     <div className="min-h-dvh w-full bg-slate-950 text-white flex flex-col items-center justify-center p-2 select-none font-sans relative">
       <div
-        className={`relative flex min-h-0 flex-col overflow-hidden rounded-3xl shadow-2xl border-4 ${gameState === "LOBBY" ? "border-amber-900/60" : "border-slate-800"}`}
-        style={{
-          width: "min(100%, 28rem)",
-          height: "min(53.125rem, max(calc(100dvh - 1rem), 42rem))",
-        }}
+        className={`relative flex min-h-0 overflow-hidden rounded-3xl shadow-2xl border-4 transition-all duration-500 bg-slate-900 ${
+          gameState === "LOBBY"
+            ? "w-full max-w-md flex-col border-amber-900/60"
+            : "w-full md:max-w-5xl lg:max-w-6xl flex-col md:flex-row border-slate-800"
+        }`}
+        style={{ height: "min(53.125rem, max(calc(100dvh - 1rem), 42rem))" }}
       >
         {gameState === "LOBBY" ? (
           <>
@@ -887,13 +836,24 @@ export default function App() {
                 playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
                 setShowPrivateModal(true);
               }}
+              onOpenTutorial={() => setShowTutorial(true)}
               currentUser={currentUser}
               onLogout={handleLogout}
             />
             {searching && <SearchingScreen onCancel={handleCancelSearch} />}
+            {showTutorial && (
+              <InteractiveTutorial
+                onComplete={() => {
+                  localStorage.setItem("hasSeenTutorial", "true");
+                  setShowTutorial(false);
+                }}
+                soundEnabled={soundEnabled}
+                sfxVolume={sfxVolume}
+              />
+            )}
           </>
         ) : (
-          <>
+          <div className="flex flex-col w-full h-full">
             <Header
               team={team}
               playerName={currentUser?.displayName || playerName}
@@ -904,6 +864,7 @@ export default function App() {
                 playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
                 setShowSettings(true);
               }}
+              onSurrender={handleSurrender}
             />
             {connectionError && (
               <p
@@ -913,148 +874,141 @@ export default function App() {
                 {connectionError}
               </p>
             )}
-            <main className="flex-1 min-h-0 bg-slate-950 p-2 sm:p-3 flex flex-col justify-between items-center relative overflow-hidden">
-              {(gameState === "SETUP" || mode === "2v2") && (
-                <RoomRoster
-                  players={roomPlayers}
-                  currentSocketId={socket.id}
-                  hostSocketId={roomHostSocketId}
-                  turnId={currentTurnId}
-                  mode={mode}
-                  canSwap={
-                    (gameState === "SETUP" ||
-                      roomLobbyStatus === "WAITING_FRIEND") &&
-                    !roomPlayers.some((player) => player.ready)
-                  }
-                  onSwapTeams={handleSwapTeams}
-                />
-              )}
-              {gameState === "PLAYING" && (
-                <div className="w-full max-w-90 bg-slate-900/90 border border-slate-800 rounded-2xl p-2.5 flex justify-between items-center shadow-xl my-auto animate-fade-in">
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider">
-                      🏠 QUÁN BẠN
-                    </span>
-                    <div className="flex gap-1.5">
-                      {activeShops.map((s) => {
-                        const health = getShopHealth(s.id);
-                        return (
-                          <div
-                            key={`my-hud-${s.id}`}
-                            className={`relative w-9 h-9 rounded-xl p-0.5 border flex items-center justify-center transition-all ${health.isSunk ? "bg-red-950/70 border-red-700 opacity-40 grayscale" : "bg-slate-800 border-slate-700 shadow"}`}
-                          >
-                            <img
-                              src={s.icon}
-                              className="w-full h-full object-contain"
-                              alt={s.name}
-                            />
-                            {health.isSunk && (
-                              <span className="absolute inset-0 flex items-center justify-center text-xs font-black text-red-500">
-                                ✖
-                              </span>
-                            )}
-                            {!health.isSunk && health.total > 0 && (
-                              <span className="absolute -bottom-1 -right-1 bg-slate-950 text-emerald-400 border border-emerald-800 text-[9px] font-black px-1 rounded-full">
-                                {health.alive}
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
+
+            <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-slate-950">
+              {/* CỘT TRÁI: Roster + HUD + BottomPanel */}
+              <div className="w-full md:w-80 lg:w-96 flex flex-col border-r border-slate-800 shrink-0">
+                {(gameState === "SETUP" || mode === "2v2") && (
+                  <div className="p-2 sm:p-3 pb-0">
+                    <RoomRoster
+                      players={roomPlayers}
+                      currentSocketId={socket.id}
+                      hostSocketId={roomHostSocketId}
+                      turnId={currentTurnId}
+                      mode={mode}
+                      canSwap={
+                        (gameState === "SETUP" ||
+                          roomLobbyStatus === "WAITING_FRIEND") &&
+                        !roomPlayers.some((player) => player.ready)
+                      }
+                      onSwapTeams={handleSwapTeams}
+                    />
                   </div>
-                  <div className="text-xs font-black text-slate-600 px-1">
-                    VS
-                  </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <span className="text-[10px] font-black text-rose-400 uppercase tracking-wider">
-                      🎯 ĐỐI THỦ
-                    </span>
-                    <div className="flex gap-1.5">
-                      {activeShops.map((s) => (
-                        <div
-                          key={`opp-hud-${s.id}`}
-                          className={`relative w-9 h-9 rounded-xl p-0.5 border flex items-center justify-center text-xs font-bold text-slate-400 shadow ${opponentSunkShopsByPlayer[targetSocketId]?.includes(s.id) ? "bg-red-950/70 border-red-700 opacity-50 grayscale" : "bg-slate-800/80 border-slate-700/80"}`}
-                        >
-                          {opponentSunkShopsByPlayer[targetSocketId]?.includes(
-                            s.id,
-                          ) ? (
-                            <>
-                              <img
-                                src={s.icon}
-                                className="h-full w-full object-contain"
-                                alt={s.name}
-                              />
-                              <span className="absolute inset-0 flex items-center justify-center text-xs font-black text-red-500">
-                                ✖
-                              </span>
-                            </>
-                          ) : (
-                            "❓"
-                          )}
+                )}
+                {gameState === "PLAYING" && (
+                  <div className="p-2 sm:p-3">
+                    <div className="w-full bg-slate-900/90 border border-slate-800 rounded-2xl p-2.5 flex justify-between items-center shadow-xl animate-fade-in">
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider">
+                          🏠 ĐỘI BẠN
+                        </span>
+                        <div className="flex flex-wrap gap-1.5 max-w-30">
+                          {activeShops.map((s, idx) => {
+                            const health = getShopHealth(s.id);
+                            return (
+                              <div
+                                key={`my-hud-${s.id}-${idx}`}
+                                className={`relative w-8 h-8 rounded-lg p-0.5 border flex items-center justify-center transition-all ${health.isSunk ? "bg-red-950/70 border-red-700 opacity-40 grayscale" : "bg-slate-800 border-slate-700 shadow"}`}
+                              >
+                                <img
+                                  src={s.icon}
+                                  className="w-full h-full object-contain"
+                                  alt={s.name}
+                                />
+                                {!health.isSunk && health.total > 0 && (
+                                  <span className="absolute -bottom-1 -right-1 bg-slate-950 text-emerald-400 border border-emerald-800 text-[9px] font-black px-1 rounded-full">
+                                    {health.alive}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
-                      ))}
+                      </div>
+                      <div className="text-xs font-black text-slate-600 px-1">
+                        VS
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="text-[10px] font-black text-rose-400 uppercase tracking-wider">
+                          🎯 ĐỘI ĐỊCH
+                        </span>
+                        <div className="flex flex-wrap justify-end gap-1.5 max-w-30">
+                          {activeShops.map((s, idx) => (
+                            <div
+                              key={`opp-hud-${s.id}-${idx}`}
+                              className={`relative w-8 h-8 rounded-lg p-0.5 border flex items-center justify-center text-xs font-bold shadow ${opponentSunkShops.includes(s.id) ? "bg-red-950/70 border-red-700 opacity-50 grayscale" : "bg-slate-800/80 border-slate-700/80 text-slate-400"}`}
+                            >
+                              {opponentSunkShops.includes(s.id) ? (
+                                <>
+                                  <img
+                                    src={s.icon}
+                                    className="h-full w-full object-contain"
+                                    alt={s.name}
+                                  />
+                                  <span className="absolute inset-0 flex items-center justify-center text-xs font-black text-red-500">
+                                    ✖
+                                  </span>
+                                </>
+                              ) : (
+                                "❓"
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
-              {gameState === "PLAYING" && mode === "2v2" && isMyTurn && (
-                <div className="flex w-full max-w-90 gap-1.5 overflow-x-auto py-1">
-                  {opposingPlayers.map((player) => (
-                    <button
-                      key={player.socketId}
-                      type="button"
-                      aria-pressed={targetSocketId === player.socketId}
-                      onClick={() => setSelectedTargetId(player.socketId)}
-                      className={`min-w-0 flex-1 truncate rounded-lg border px-2 py-2 text-[10px] font-black ${targetSocketId === player.socketId ? "border-amber-300 bg-amber-400 text-slate-950" : "border-slate-700 bg-slate-900 text-slate-300"}`}
-                    >
-                      🎯 {player.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <div className="my-auto flex min-h-0 w-full justify-center">
-                <GameBoard
+                )}
+                <div className="flex-1" /> {/* Spacer */}
+                <BottomPanel
                   gameState={gameState}
-                  myBoard={myBoard}
-                  setMyBoard={setMyBoard}
-                  opponentHits={opponentHits}
                   selectedShop={selectedShop}
+                  onSelectShop={(id) => {
+                    playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
+                    setSelectedShop(id);
+                  }}
                   orientation={orientation}
-                  previewIndex={previewIndex}
-                  setPreviewIndex={setPreviewIndex}
-                  isMyTurn={isMyTurn}
-                  shotPending={shotPending}
-                  onFireShot={handleFireShot}
-                  opponentAimingIndex={opponentAimingIndex}
-                  onAimShot={handleAimShot}
-                  recentShot={recentShot}
-                  showTaunt={showTaunt}
-                  soundEnabled={soundEnabled}
+                  onRotate={handleRotate}
+                  onResetBoard={handleResetBoard}
+                  myBoard={myBoard}
+                  onConfirmPlaceShop={handleConfirmPlaceShop}
+                  isPreviewValid={previewIndex !== null}
+                  onReady={handleReady}
+                  onSendChat={handleSendChat}
+                  messages={messages}
                   shops={activeShops}
-                  boardSize={gridSize}
-                  equippedCosmetics={currentUser?.equippedCosmetics || []}
+                  showChatToggle={mode === "2v2"}
                 />
               </div>
-            </main>
-            <BottomPanel
-              gameState={gameState}
-              selectedShop={selectedShop}
-              onSelectShop={(id) => {
-                playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
-                setSelectedShop(id);
-              }}
-              orientation={orientation}
-              onRotate={handleRotate}
-              onResetBoard={handleResetBoard}
-              myBoard={myBoard}
-              onConfirmPlaceShop={handleConfirmPlaceShop}
-              isPreviewValid={previewIndex !== null}
-              onReady={handleReady}
-              onSendChat={handleSendChat}
-              messages={messages}
-              shops={activeShops}
-            />
+
+              {/* CỘT PHẢI: GameBoard */}
+              <main className="flex-1 p-2 md:p-6 flex items-center justify-center relative overflow-hidden">
+                <div className="w-full max-w-100 md:max-w-full md:h-full flex items-center justify-center">
+                  <GameBoard
+                    gameState={gameState}
+                    myBoard={myBoard}
+                    setMyBoard={setMyBoard}
+                    opponentHits={opponentHits}
+                    selectedShop={selectedShop}
+                    orientation={orientation}
+                    previewIndex={previewIndex}
+                    setPreviewIndex={setPreviewIndex}
+                    isMyTurn={isMyTurn}
+                    shotPending={shotPending}
+                    onFireShot={handleFireShot}
+                    opponentAimingIndex={opponentAimingIndex}
+                    onAimShot={handleAimShot}
+                    recentShot={recentShot}
+                    showTaunt={showTaunt}
+                    soundEnabled={soundEnabled}
+                    shops={activeShops}
+                    boardSize={gridSize}
+                    equippedCosmetics={currentUser?.equippedCosmetics || []}
+                  />
+                </div>
+              </main>
+            </div>
+
             {coinFlipResult && (
               <CoinFlipOverlay
                 result={coinFlipResult}
@@ -1063,6 +1017,12 @@ export default function App() {
                   setCoinFlipResult(null);
                   setGameState("PLAYING");
                 }}
+              />
+            )}
+            {surrenderVote && (
+              <SurrenderVoteModal
+                initiatorName={surrenderVote.initiatorName}
+                onVote={handleSurrenderVote}
               />
             )}
             {gameState === "FINISHED" && (
@@ -1080,10 +1040,10 @@ export default function App() {
                 onLeave={handleLeaveRoom}
               />
             )}
-          </>
+          </div>
         )}
 
-        {/* CÁC MODALS CỦA GAME */}
+        {/* MODALS */}
         <SocialHub
           isOpen={showSocialHub}
           onClose={() => setShowSocialHub(false)}
@@ -1140,9 +1100,8 @@ export default function App() {
         <PrivateRoomModal
           isOpen={showPrivateModal}
           onClose={() => {
-            if (roomLobbyStatus === "WAITING_FRIEND") {
-              handleCancelPrivateRoom();
-            } else {
+            if (roomLobbyStatus === "WAITING_FRIEND") handleCancelPrivateRoom();
+            else {
               setShowPrivateModal(false);
               setCreatedRoomCode(null);
             }
@@ -1167,12 +1126,15 @@ export default function App() {
           currentSocketId={socket.id}
           onChangeMode={handleChangePrivateMode}
           onSwapTeams={handleSwapTeams}
+          onAddBot={handleAddBot}
+          onKickPlayer={handleKickPlayer}
+          onHostStart={handleHostStartGame}
         />
 
-        {/* HỆ THỐNG CUSTOM TOAST (THÔNG BÁO) GHI ĐÈ LÊN MỌI THỨ */}
+        {/* CUSTOM TOAST */}
         {customAlert.show && (
           <div className="absolute inset-0 z-100 flex items-center justify-center bg-black/70 p-5 backdrop-blur-sm">
-            <div className="bg-slate-900 border-2 border-slate-700 rounded-3xl p-6 shadow-2xl w-full animate-fade-in flex flex-col items-center text-center">
+            <div className="bg-slate-900 border-2 border-slate-700 rounded-3xl p-6 shadow-2xl w-full max-w-sm animate-fade-in flex flex-col items-center text-center">
               <div className="text-5xl mb-3 drop-shadow-md">
                 {customAlert.type === "error"
                   ? "❌"

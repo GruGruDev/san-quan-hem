@@ -2,6 +2,8 @@ export default function Header({
   team,
   playerName,
   isMyTurn,
+  isMyTeamTurn, // NHẬN THÊM PROP NÀY
+  mode, // NHẬN THÊM MODE
   gameState,
   turnTimeLeft,
   onOpenSettings,
@@ -43,7 +45,9 @@ export default function Header({
               : gameState === "PLAYING"
                 ? isMyTurn
                   ? "🎯 ĐẾN LƯỢT BẠN BẮN!"
-                  : "🛡️ ĐỐI THỦ ĐANG NGẮM..."
+                  : mode === "2v2" && isMyTeamTurn
+                    ? "🤝 ĐỒNG ĐỘI ĐANG NGẮM..."
+                    : "🛡️ ĐỐI THỦ ĐANG NGẮM..."
                 : "TỔNG KẾT TRẬN ĐẤU"}
           </span>
         </div>

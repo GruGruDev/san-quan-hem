@@ -237,7 +237,6 @@ export default function App() {
     else if (gameState === "FINISHED") stopBGM();
   }, [gameState, soundEnabled, bgmVolume]);
 
-  // PHÁT SOUND KHI ĐẾM TỚI 10S NHƯ YÊU CẦU
   useEffect(() => {
     if (gameState === "PLAYING" && turnTimeLeft === 10)
       playSFX("TurnTimer.mp3", soundEnabled, sfxVolume);
@@ -253,18 +252,18 @@ export default function App() {
     return () => clearInterval(timer);
   }, [gameState, turnTimeLeft]);
 
-  // ANIMATION BANNER LƯỢT ĐI
+  // ANIMATION BANNER LƯỢT ĐI (Đã thêm check mode === '2v2')
   useEffect(() => {
     if (gameState === "PLAYING") {
       let text = "🛡️ LƯỢT ĐỐI THỦ!";
       if (isMyTurn) text = "💥 ĐẾN LƯỢT BẠN!";
-      else if (isMyTeamTurn) text = "🤝 LƯỢT ĐỒNG ĐỘI!";
+      else if (mode === "2v2" && isMyTeamTurn) text = "🤝 LƯỢT ĐỒNG ĐỘI!";
 
       setTurnBanner(text);
       const t = setTimeout(() => setTurnBanner(null), 2500);
       return () => clearTimeout(t);
     }
-  }, [isMyTurn, isMyTeamTurn, gameState]);
+  }, [isMyTurn, isMyTeamTurn, gameState, mode]);
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -412,7 +411,8 @@ export default function App() {
       const textList = TAUNT_TEXTS[type] || TAUNT_TEXTS.MISS;
       const randomText = textList[Math.floor(Math.random() * textList.length)];
       setRecentShot({ index: data.targetIndex, type, text: randomText });
-      setCurrentTurnId(data.nextTurnId);
+
+      // ĐÃ XÓA `setCurrentTurnId` Ở ĐÂY ĐỂ TRÁNH LỖI LẬT BÀN CỜ TRƯỚC KHI NỔ XONG!
 
       if (data.targetTeam !== gameConfigRef.current.team) {
         setOpponentHits((prev) => {
@@ -434,13 +434,18 @@ export default function App() {
         });
       }
 
+      // ĐỢI NỔ XONG MỚI ĐỔI LƯỢT + LẬT BÀN CỜ
       setTimeout(() => {
         setRecentShot(null);
         if (data.shooterId === socket.id) {
           shotPendingRef.current = false;
           setShotPending(false);
         }
+
+        // CHUYỂN VÀO TRONG TIMEOUT ĐỂ TRÁNH RACE CONDITION
+        setCurrentTurnId(data.nextTurnId);
         setIsMyTurn(data.nextTurnId === socket.id);
+
         setTurnTimeLeft(25);
       }, 1500);
     });
@@ -827,6 +832,8 @@ export default function App() {
               team={team}
               playerName={currentUser?.displayName || playerName}
               isMyTurn={isMyTurn}
+              isMyTeamTurn={isMyTeamTurn} // TRUYỀN THÊM PROP NÀY CHO HEADER
+              mode={mode} // TRUYỀN THÊM MODE CHO HEADER
               gameState={gameState}
               turnTimeLeft={turnTimeLeft}
               onOpenSettings={() => {

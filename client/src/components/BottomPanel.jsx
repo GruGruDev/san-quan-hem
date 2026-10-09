@@ -5,7 +5,7 @@ export default function BottomPanel({
   gameState,
   selectedShop,
   onSelectShop,
-  rotation = 0, // Nhận góc xoay 0, 1, 2, 3 từ App.jsx
+  rotation = 0,
   onRotate,
   onResetBoard,
   myBoard,
@@ -18,7 +18,7 @@ export default function BottomPanel({
   showChatToggle = false,
 }) {
   const [chatInput, setChatInput] = useState("");
-  const [chatType, setChatType] = useState("ALL"); // ALL | TEAM
+  const [chatType, setChatType] = useState("ALL");
   const chatEndRef = useRef(null);
 
   useEffect(() => {
@@ -41,16 +41,38 @@ export default function BottomPanel({
   const currentShopObj = shops.find((s) => s.id === selectedShop) || shops[0];
   const placedShopIds = new Set(myBoard.filter(Boolean).map((c) => c.shopId));
   const isAllPlaced = shops.every((s) => placedShopIds.has(s.id));
-
-  // Tên góc xoay hiển thị trên nút
   const rotationDegrees = ["0°", "90°", "180°", "270°"];
 
   return (
-    <div className="w-full max-w-md md:max-w-full bg-slate-900 p-3 border-t border-slate-800 flex flex-col gap-2.5 rounded-b-2xl md:rounded-bl-3xl md:rounded-br-none select-none">
+    <div className="w-full flex-1 flex flex-col justify-between p-3 gap-3 bg-slate-950/80 border-t border-slate-800/80 select-none">
+      {/* BẢNG ĐIỀU KHIỂN ĐẶT QUÁN (CHỈ HIỆN KHI SETUP) */}
       {isSetup && (
-        <div className="flex flex-col gap-2">
-          {/* Thanh Chọn Quán Tinh Gọn */}
-          <div className="flex gap-2 justify-center items-center bg-slate-950 p-2 rounded-xl border border-slate-800 flex-wrap">
+        <div className="flex flex-col gap-2.5 bg-slate-900/90 p-3 rounded-2xl border border-slate-800 shadow-xl">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-black uppercase text-amber-400 tracking-wider">
+              📦 Kho Quán Ăn ({placedShopIds.size}/{shops.length})
+            </span>
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                onClick={onRotate}
+                className="bg-indigo-600/90 hover:bg-indigo-500 active:scale-95 text-white font-black text-xs px-2.5 py-1.5 rounded-xl shadow border border-indigo-400/40 transition flex items-center gap-1"
+              >
+                🔄 Xoay ({rotationDegrees[rotation % 4]})
+              </button>
+              <button
+                type="button"
+                onClick={onResetBoard}
+                className="bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 font-bold text-xs px-2.5 py-1.5 rounded-xl border border-slate-700 transition"
+                title="Đặt lại từ đầu"
+              >
+                ↩️
+              </button>
+            </div>
+          </div>
+
+          {/* Danh Sách Lựa Chọn Quán */}
+          <div className="grid grid-cols-4 gap-2">
             {shops.map((shop) => {
               const isPlaced = placedShopIds.has(shop.id);
               const isSelected = selectedShop === shop.id;
@@ -60,12 +82,12 @@ export default function BottomPanel({
                   key={shop.id}
                   type="button"
                   onClick={() => onSelectShop(shop.id)}
-                  className={`relative w-10 h-10 shrink-0 rounded-xl p-1 flex items-center justify-center transition border-2 ${
+                  className={`relative aspect-square rounded-xl p-1.5 flex flex-col items-center justify-center transition border-2 ${
                     isSelected
-                      ? "bg-amber-500/20 border-amber-400 scale-105 shadow-md shadow-amber-500/20"
+                      ? "bg-amber-500/20 border-amber-400 shadow-lg shadow-amber-500/20 scale-105"
                       : isPlaced
-                        ? "bg-slate-900 border-emerald-600/60 opacity-80"
-                        : "bg-slate-900 border-slate-700 opacity-60 hover:opacity-100"
+                        ? "bg-slate-950/60 border-emerald-600/40 opacity-50"
+                        : "bg-slate-950 border-slate-800 opacity-80 hover:opacity-100 hover:border-slate-600"
                   }`}
                 >
                   <img
@@ -73,8 +95,8 @@ export default function BottomPanel({
                     alt={shop.name}
                     className="w-full h-full object-contain pointer-events-none"
                   />
-                  <span className="absolute -bottom-1 -right-1 bg-slate-950 text-amber-400 border border-slate-700 text-[10px] font-black px-1.5 py-0.5 rounded-full">
-                    {shop.size}
+                  <span className="absolute -bottom-1 -right-1 bg-slate-950 text-amber-400 border border-slate-700 text-[9px] font-black px-1.5 py-0.2 rounded-full">
+                    {shop.size} ô
                   </span>
                   {isPlaced && (
                     <span className="absolute -top-1 -left-1 bg-emerald-500 text-slate-950 text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow">
@@ -84,43 +106,23 @@ export default function BottomPanel({
                 </button>
               );
             })}
-
-            <div className="h-8 w-px bg-slate-800 mx-1 hidden md:block" />
-
-            {/* Cụm Nút Xoay / Reset */}
-            <div className="flex gap-1">
-              <button
-                type="button"
-                onClick={onRotate}
-                className="bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-black text-xs px-3 py-2.5 rounded-xl shadow transition flex items-center gap-1"
-              >
-                🔄 XOAY ({rotationDegrees[rotation % 4]})
-              </button>
-              <button
-                type="button"
-                onClick={onResetBoard}
-                className="bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 font-bold text-xs p-2.5 rounded-xl transition"
-                title="Xếp lại toàn bộ"
-              >
-                ↩️
-              </button>
-            </div>
           </div>
 
+          {/* Nút Chốt Vị Trí / Sẵn Sàng */}
           {!isAllPlaced ? (
             <button
               type="button"
               onClick={onConfirmPlaceShop}
               disabled={!isPreviewValid}
-              className="w-full bg-linear-to-r from-amber-500 to-yellow-500 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 font-black py-3 rounded-xl shadow-lg active:scale-95 transition text-xs uppercase tracking-wider"
+              className="w-full bg-linear-to-r from-amber-500 to-yellow-500 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 font-black py-2.5 rounded-xl shadow-lg active:scale-95 transition text-xs uppercase tracking-wider mt-1"
             >
-              📌 ĐẶT {currentShopObj.name.toUpperCase()} CỐ ĐỊNH
+              📌 Đặt {currentShopObj.name.toUpperCase()} Cố Định
             </button>
           ) : (
             <button
               type="button"
               onClick={onReady}
-              className="w-full bg-linear-to-r from-emerald-500 to-teal-600 hover:brightness-110 text-white font-black py-3.5 rounded-xl shadow-lg active:scale-95 transition text-sm uppercase tracking-wider animate-pulse"
+              className="w-full bg-linear-to-r from-emerald-500 to-teal-600 hover:brightness-110 text-white font-black py-3 rounded-xl shadow-lg active:scale-95 transition text-xs uppercase tracking-wider animate-pulse mt-1"
             >
               🚀 SẴN SÀNG VÀO TRẬN!
             </button>
@@ -128,23 +130,17 @@ export default function BottomPanel({
         </div>
       )}
 
-      {/* Frame Chat Log */}
-      <div className="bg-slate-950 rounded-2xl p-2.5 h-32 md:flex-1 flex flex-col justify-between border border-slate-800 shadow-inner">
-        <div className="overflow-y-auto flex-1 text-[12px] flex flex-col gap-1.5 pr-1 font-sans">
+      {/* KHUNG NHẬT KÝ VÀ KÊNH CHAT */}
+      <div className="flex-1 bg-slate-900/90 rounded-2xl p-2.5 flex flex-col justify-between border border-slate-800/80 shadow-inner min-h-35">
+        <div className="overflow-y-auto flex-1 text-xs flex flex-col gap-1.5 pr-1 max-h-36">
           {Array.isArray(messages) &&
             messages.map((msg, idx) => (
               <div
                 key={idx}
-                className={
-                  msg.sender === "Hệ thống"
-                    ? "text-amber-400/90 italic font-medium leading-relaxed"
-                    : msg.type === "TEAM"
-                      ? "text-emerald-300 leading-relaxed"
-                      : "text-slate-200 leading-relaxed"
-                }
+                className={`leading-relaxed ${msg.sender === "Hệ thống" ? "text-amber-400/90 italic font-medium" : msg.type === "TEAM" ? "text-emerald-300" : "text-slate-200"}`}
               >
                 {msg.type === "TEAM" && (
-                  <span className="text-[9px] font-black mr-1 bg-emerald-950 border border-emerald-800 px-1 py-0.5 rounded text-emerald-400">
+                  <span className="text-[9px] font-black mr-1 bg-emerald-950 border border-emerald-800 px-1 py-0.2 rounded text-emerald-400">
                     [ĐỘI]
                   </span>
                 )}
@@ -157,7 +153,7 @@ export default function BottomPanel({
                 >
                   {msg.sender}:
                 </b>{" "}
-                <span className="break-all font-medium">
+                <span className="wrap-break-words font-medium">
                   {typeof filterBadWords === "function"
                     ? filterBadWords(msg.text)
                     : msg.text}
@@ -167,18 +163,17 @@ export default function BottomPanel({
           <div ref={chatEndRef} />
         </div>
 
-        <form onSubmit={handleSend} className="flex gap-1.5 mt-2">
+        <form
+          onSubmit={handleSend}
+          className="flex gap-1.5 mt-2 pt-2 border-t border-slate-800/60"
+        >
           {showChatToggle && (
             <button
               type="button"
               onClick={() =>
                 setChatType((prev) => (prev === "ALL" ? "TEAM" : "ALL"))
               }
-              className={`shrink-0 px-2 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition active:scale-95 border ${
-                chatType === "TEAM"
-                  ? "bg-emerald-950 border-emerald-700 text-emerald-400"
-                  : "bg-slate-800 border-slate-600 text-slate-300"
-              }`}
+              className={`shrink-0 px-2 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider transition active:scale-95 border ${chatType === "TEAM" ? "bg-emerald-950 border-emerald-700 text-emerald-400" : "bg-slate-800 border-slate-600 text-slate-300"}`}
             >
               {chatType === "TEAM" ? "🏠 Đội" : "🌍 All"}
             </button>
@@ -186,14 +181,12 @@ export default function BottomPanel({
           <input
             type="text"
             placeholder={
-              chatType === "TEAM"
-                ? "Chat với đồng đội..."
-                : "Gửi tin nhắn khịa..."
+              chatType === "TEAM" ? "Chat với đồng đội..." : "Gửi tin nhắn..."
             }
             value={chatInput}
             onChange={(e) => setChatInput(e.target.value)}
             maxLength={60}
-            className="flex-1 min-w-0 bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 transition"
+            className="flex-1 min-w-0 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500/50 transition"
           />
           <button
             type="submit"

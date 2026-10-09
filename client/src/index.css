@@ -1,8 +1,6 @@
 @import "tailwindcss";
 
-/* Tailwind v4 KHÔNG đọc tailwind.config.js mặc định.
-   Animation tuỳ biến phải khai báo ngay trong CSS bằng @theme.
-   Mỗi --animate-xxx sẽ tự sinh ra class "animate-xxx". */
+/* Tailwind v4 Configuration & Custom Animations */
 @theme {
   --animate-fade-in: fade-in 0.3s ease-out forwards;
   --animate-pop-in: pop-in 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
@@ -10,6 +8,7 @@
   --animate-shake: shake 0.4s ease-in-out;
   --animate-coin-flip: coin-flip 1.4s cubic-bezier(0.45, 0, 0.55, 1) forwards;
   --animate-loading-bar: loading-bar 2s ease-in-out forwards;
+  --animate-pulse-glow: pulse-glow 2.5s ease-in-out infinite;
 
   @keyframes fade-in {
     0% {
@@ -85,6 +84,69 @@
       width: 100%;
     }
   }
+
+  @keyframes pulse-glow {
+    0%,
+    100% {
+      box-shadow: 0 0 8px rgba(245, 158, 11, 0.2);
+    }
+    50% {
+      box-shadow: 0 0 18px rgba(245, 158, 11, 0.5);
+    }
+  }
+}
+
+/* Base Styles & Utility Classes */
+:root {
+  --bg-dark: #090d16;
+  --surface-dark: #0f172a;
+  --surface-card: #1e293b;
+  --primary-gold: #f59e0b;
+}
+
+body {
+  background-color: var(--bg-dark);
+  color: #f8fafc;
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Oxygen,
+    Ubuntu,
+    Cantarell,
+    sans-serif;
+  overflow-x: hidden;
+}
+
+/* Surface Tokens */
+.game-surface {
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.game-card {
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(245, 158, 11, 0.15);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.6);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(245, 158, 11, 0.3);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(245, 158, 11, 0.6);
 }
 
 /* Chống iOS tự zoom khi bấm vào ô nhập trên mobile */

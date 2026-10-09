@@ -12,7 +12,7 @@ export default function GameBoard({
   setMyBoard,
   opponentHits,
   selectedShop,
-  rotation = 0, // Nhận góc xoay 0, 1, 2, 3 từ App.jsx
+  rotation = 0,
   previewIndex,
   setPreviewIndex,
   isMyTurn,
@@ -47,7 +47,6 @@ export default function GameBoard({
     return undefined;
   };
 
-  // Tính tọa độ chiếm giữ chính xác theo Ma Trận Tetris Shape & Góc xoay
   const getOccupiedIndices = (startIndex, shopObj, rotDegree) => {
     if (
       startIndex === null ||
@@ -68,9 +67,8 @@ export default function GameBoard({
     const indices = [];
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
-        if (shape[r][c] === 1) {
+        if (shape[r][c] === 1)
           indices.push((startRow + r) * boardSize + (startCol + c));
-        }
       }
     }
     return indices;
@@ -89,11 +87,8 @@ export default function GameBoard({
       : null;
   const isPreviewValid = checkPlacementValid(previewIndices);
 
-  // XỬ LÝ CLICK ĐẶT QUÁN CỐ ĐỊNH (KHÔNG DÍNH CHUỘT)
   const handleSetupCellClick = (index) => {
     if (!isSetup) return;
-
-    // Nếu click lại ô đang xem trước (Preview) -> LƯU CỐ ĐỊNH
     if (
       previewIndex === index ||
       (previewIndices && previewIndices.includes(index))
@@ -115,8 +110,6 @@ export default function GameBoard({
         return;
       }
     }
-
-    // Chọn vị trí xem trước cố định
     playSFX("pop.mp3", soundEnabled, 0.4);
     setPreviewIndex(index);
   };
@@ -135,9 +128,7 @@ export default function GameBoard({
 
   const isSunkExplosion = recentShot && recentShot.type === "SUNK";
   const showingMyBoard = isSetup || (isPlaying && !isMyTeamTurn);
-  const activeBoard = showingMyBoard ? myBoard : opponentHits;
 
-  // Render Lưới Bàn Cờ
   const renderGrid = (boardData, isOpponentBoard) => (
     <div
       className="absolute inset-0 grid gap-px w-full h-full p-[8.5%]"
@@ -169,14 +160,20 @@ export default function GameBoard({
               isOpponentBoard &&
               (shotPending || aimingIndex !== null || hitStatus !== null)
             }
-            className={`w-full h-full flex items-center justify-center relative border border-white/10 rounded-sm transition-all overflow-visible
-              ${isOpponentBoard && hitStatus === null && !shotPending && aimingIndex === null && isMyTurn ? "hover:bg-yellow-400/20 cursor-pointer active:scale-90" : ""}
-              ${!isOpponentBoard && isPreview && isPreviewValid ? "bg-emerald-500/50 border-2 border-emerald-300 cursor-pointer animate-pulse" : ""}
-              ${!isOpponentBoard && isPreview && !isPreviewValid ? "bg-rose-500/50 border-2 border-rose-300 cursor-pointer" : ""}
-              ${!isOpponentBoard && cell && cell.shopId ? `outline-solid outline-2 -outline-offset-2 ${SHOP_OUTLINE[cell.shopId] || "outline-yellow-400"}` : ""}
-            `}
+            className={`w-full h-full flex items-center justify-center relative border border-white/15 rounded-sm transition-all overflow-visible ${
+              isOpponentBoard &&
+              hitStatus === null &&
+              !shotPending &&
+              aimingIndex === null &&
+              isMyTurn
+                ? "hover:bg-amber-400/20 active:bg-amber-400/30 cursor-pointer"
+                : ""
+            } ${!isOpponentBoard && isPreview && isPreviewValid ? "bg-emerald-500/50 border-2 border-emerald-300 cursor-pointer animate-pulse" : ""} ${
+              !isOpponentBoard && isPreview && !isPreviewValid
+                ? "bg-rose-500/50 border-2 border-rose-300 cursor-pointer"
+                : ""
+            } ${!isOpponentBoard && cell && cell.shopId ? `outline-solid outline-2 -outline-offset-2 ${SHOP_OUTLINE[cell.shopId] || "outline-yellow-400"}` : ""}`}
           >
-            {/* Render Quán (Chỉ sân nhà) */}
             {!isOpponentBoard && cell && cell.icon && (
               <img
                 src={cell.icon}
@@ -194,7 +191,6 @@ export default function GameBoard({
               />
             )}
 
-            {/* Kính ngắm địch trên sân nhà */}
             {!isOpponentBoard && isOpponentAimingHere && (
               <img
                 src="/vitri.png"
@@ -203,7 +199,6 @@ export default function GameBoard({
               />
             )}
 
-            {/* Kính ngắm trên sân địch */}
             {isOpponentBoard && (hitStatus === null || isAiming) && (
               <img
                 src="/vitri.png"
@@ -212,7 +207,6 @@ export default function GameBoard({
               />
             )}
 
-            {/* Hiệu ứng Trúng / Trượt */}
             {hitStatus === "HIT" && (
               <img
                 src="/trung.png"
@@ -220,13 +214,6 @@ export default function GameBoard({
                 className="absolute inset-0 w-[120%] h-[120%] object-contain z-20 pointer-events-none animate-bounce"
               />
             )}
-            {hitStatus === "HIT" &&
-              cosmeticSlots.hit_effect === "hit_spark" && (
-                <span className="absolute inset-0 z-30 flex items-center justify-center text-xl text-amber-200 drop-shadow-[0_0_6px_rgba(251,191,36,0.9)] animate-ping pointer-events-none">
-                  ✦
-                </span>
-              )}
-
             {hitStatus === "MISS" && (
               <img
                 src="/khongtrung.png"
@@ -234,14 +221,7 @@ export default function GameBoard({
                 className="absolute inset-0 w-[90%] h-[90%] object-contain z-20 opacity-80 pointer-events-none"
               />
             )}
-            {hitStatus === "MISS" &&
-              cosmeticSlots.miss_effect === "miss_ripple" && (
-                <span className="absolute inset-0 z-30 flex items-center justify-center text-lg text-cyan-200 animate-pulse pointer-events-none">
-                  ≈
-                </span>
-              )}
 
-            {/* Taunt text */}
             {showTaunt && recentShot && recentShot.index === index && (
               <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-40 pointer-events-none whitespace-nowrap animate-float-up">
                 <span
@@ -258,27 +238,25 @@ export default function GameBoard({
   );
 
   return (
-    <div className="flex flex-col md:flex-row gap-6 md:gap-10 w-full h-full items-center justify-center p-2">
-      {/* BÀN CỜ SÂN NHÀ */}
+    <div className="w-full h-full flex flex-col md:flex-row gap-6 items-center justify-center p-2 min-h-0">
+      {/* SÂN NHÀ */}
       <div
-        className={`relative aspect-square w-full max-w-[24rem] xl:max-w-lg bg-slate-900 rounded-2xl p-1 shadow-2xl border-2 border-slate-700 transition-all duration-500
-        ${isPlaying && isMyTurn ? "hidden md:block opacity-40 scale-95" : "block opacity-100 scale-100"} 
-        ${isSunkExplosion && !isMyTurn ? "animate-shake" : ""}`}
+        className={`relative aspect-square h-full max-h-[80dvh] bg-slate-900/90 rounded-3xl p-1 shadow-2xl border-2 border-slate-700/80 transition-all duration-500 ${isPlaying && isMyTurn ? "hidden md:block opacity-40 scale-95" : "block opacity-100 scale-100"} ${isSunkExplosion && !isMyTurn ? "animate-shake" : ""}`}
       >
-        <div className="absolute -top-7 left-0 right-0 text-center font-black text-emerald-400 uppercase tracking-widest drop-shadow">
-          🏠 Trận địa nhà
+        <div className="absolute -top-7 left-0 right-0 text-center font-black text-xs text-emerald-400 uppercase tracking-widest drop-shadow">
+          🏠 Trận Địa Nhà
         </div>
         <img
           src="/bg8x8.png"
           alt="Map"
-          className="absolute inset-0 w-full h-full object-fill rounded-xl pointer-events-none"
+          className="absolute inset-0 w-full h-full object-fill rounded-2xl pointer-events-none"
         />
         {renderGrid(myBoard, false)}
 
-        {/* Tọa độ ngang */}
+        {/* Tọa độ Ngang & Dọc */}
         <div
           aria-hidden="true"
-          className="absolute grid pointer-events-none text-[9px] font-black text-amber-200"
+          className="absolute grid pointer-events-none text-[10px] font-black text-amber-200/90"
           style={{
             top: "2%",
             left: "8.5%",
@@ -293,10 +271,9 @@ export default function GameBoard({
             </span>
           ))}
         </div>
-        {/* Tọa độ dọc */}
         <div
           aria-hidden="true"
-          className="absolute grid pointer-events-none text-[9px] font-black text-amber-200"
+          className="absolute grid pointer-events-none text-[10px] font-black text-amber-200/90"
           style={{
             top: "8.5%",
             bottom: "8.5%",
@@ -313,36 +290,34 @@ export default function GameBoard({
         </div>
 
         {isSunkExplosion && !isMyTurn && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center mix-blend-screen">
+          <div className="absolute inset-0 z-50 flex items-center justify-center mix-blend-screen pointer-events-none">
             <img
               src="/explosion.gif"
-              className="w-[200%] h-[200%] max-w-none opacity-95"
+              className="w-[180%] h-[180%] max-w-none opacity-95"
               alt="Boom"
             />
           </div>
         )}
       </div>
 
-      {/* BÀN CỜ ĐỐI THỦ */}
+      {/* SÂN ĐỊCH */}
       {isPlaying && (
         <div
-          className={`relative aspect-square w-full max-w-[24rem] xl:max-w-lg bg-slate-900 rounded-2xl p-1 shadow-2xl border-2 border-slate-700 transition-all duration-500
-          ${isPlaying && !isMyTurn ? "hidden md:block opacity-40 scale-95" : "block opacity-100 scale-100"} 
-          ${isSunkExplosion && isMyTurn ? "animate-shake" : ""}`}
+          className={`relative aspect-square h-full max-h-[80dvh] bg-slate-900/90 rounded-3xl p-1 shadow-2xl border-2 border-slate-700/80 transition-all duration-500 ${isPlaying && !isMyTurn ? "hidden md:block opacity-40 scale-95" : "block opacity-100 scale-100"} ${isSunkExplosion && isMyTurn ? "animate-shake" : ""}`}
         >
-          <div className="absolute -top-7 left-0 right-0 text-center font-black text-rose-400 uppercase tracking-widest drop-shadow">
-            🎯 Trận địa địch
+          <div className="absolute -top-7 left-0 right-0 text-center font-black text-xs text-rose-400 uppercase tracking-widest drop-shadow">
+            🎯 Trận Địa Địch
           </div>
           <img
             src="/bg8x8.png"
             alt="Map"
-            className="absolute inset-0 w-full h-full object-fill rounded-xl pointer-events-none"
+            className="absolute inset-0 w-full h-full object-fill rounded-2xl pointer-events-none"
           />
           {renderGrid(opponentHits, true)}
 
           <div
             aria-hidden="true"
-            className="absolute grid pointer-events-none text-[9px] font-black text-amber-200"
+            className="absolute grid pointer-events-none text-[10px] font-black text-amber-200/90"
             style={{
               top: "2%",
               left: "8.5%",
@@ -359,7 +334,7 @@ export default function GameBoard({
           </div>
           <div
             aria-hidden="true"
-            className="absolute grid pointer-events-none text-[9px] font-black text-amber-200"
+            className="absolute grid pointer-events-none text-[10px] font-black text-amber-200/90"
             style={{
               top: "8.5%",
               bottom: "8.5%",
@@ -376,23 +351,16 @@ export default function GameBoard({
           </div>
 
           {isSunkExplosion && isMyTurn && (
-            <div className="absolute inset-0 z-50 flex items-center justify-center mix-blend-screen">
+            <div className="absolute inset-0 z-50 flex items-center justify-center mix-blend-screen pointer-events-none">
               <img
                 src="/explosion.gif"
-                className="w-[200%] h-[200%] max-w-none opacity-95"
+                className="w-[180%] h-[180%] max-w-none opacity-95"
                 alt="Boom"
               />
             </div>
           )}
         </div>
       )}
-
-      <style>{`
-        @keyframes floatUp { 0% { opacity: 0; transform: translate(-50%, 0) scale(0.8); } 20% { opacity: 1; transform: translate(-50%, -10px) scale(1.1); } 80% { opacity: 1; transform: translate(-50%, -18px) scale(1); } 100% { opacity: 0; transform: translate(-50%, -25px) scale(0.9); } }
-        .animate-float-up { animation: floatUp 1.8s ease-out forwards; }
-        @keyframes shake { 0%, 100% { transform: translateX(0) translateY(0); } 10%, 30%, 50%, 70%, 90% { transform: translateX(-8px) translateY(5px) rotate(-1.5deg); } 20%, 40%, 60%, 80% { transform: translateX(8px) translateY(-5px) rotate(1.5deg); } }
-        .animate-shake { animation: shake 2.5s cubic-bezier(.36,.07,.19,.97) both; }
-      `}</style>
     </div>
   );
 }

@@ -758,12 +758,11 @@ export default function App() {
     return <LoadingScreen onFinish={() => setAppLoading(false)} />;
 
   return (
-    <div className="min-h-dvh w-full bg-slate-950 text-white flex flex-col items-center justify-center p-0 md:p-2 select-none font-sans relative overflow-x-hidden">
+    <div className="flex h-dvh w-full flex-col bg-slate-950 font-sans text-white md:p-2 overflow-hidden">
       <div
-        className={`relative flex min-h-0 overflow-hidden shadow-2xl transition-all duration-500 bg-slate-900 w-full h-full border-slate-800 ${
-          gameState === "LOBBY" ? "border-0 md:border-4" : "border-0"
+        className={`relative flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-slate-900 transition-all duration-500 md:rounded-2xl md:border-2 md:border-slate-800 md:shadow-2xl ${
+          gameState === "LOBBY" ? "" : ""
         }`}
-        style={{ minHeight: "100dvh" }}
       >
         {gameState === "LOBBY" ? (
           <>
@@ -836,7 +835,7 @@ export default function App() {
 
             <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-slate-950">
               {/* CỘT TRÁI: Roster + HUD + BottomPanel */}
-              <div className="w-full md:w-80 lg:w-96 flex flex-col border-r border-slate-800 shrink-0">
+              <div className="w-full md:w-80 lg:w-96 flex flex-col border-r border-slate-800 shrink-0 min-h-0 overflow-y-auto">
                 {(gameState === "SETUP" || mode === "2v2") && (
                   <div className="p-2 sm:p-3 pb-0">
                     <RoomRoster
@@ -855,7 +854,7 @@ export default function App() {
                   </div>
                 )}
                 {gameState === "PLAYING" && (
-                  <div className="p-2 sm:p-3">
+                  <div className="p-2 sm:p-3 shrink-0">
                     <div className="w-full bg-slate-900/90 border border-slate-800 rounded-2xl p-2.5 flex justify-between items-center shadow-xl animate-fade-in">
                       <div className="flex flex-col gap-1">
                         <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider">
@@ -918,7 +917,7 @@ export default function App() {
                     </div>
                   </div>
                 )}
-                <div className="flex-1" />
+
                 <BottomPanel
                   gameState={gameState}
                   selectedShop={selectedShop}
@@ -942,7 +941,7 @@ export default function App() {
               </div>
 
               {/* CỘT PHẢI: GameBoard */}
-              <main className="flex-1 p-2 md:p-6 flex items-center justify-center relative overflow-hidden bg-slate-950">
+              <main className="flex-1 p-2 md:p-6 flex items-center justify-center relative overflow-hidden bg-slate-950 min-h-0">
                 <GameBoard
                   gameState={gameState}
                   myBoard={myBoard}

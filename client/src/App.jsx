@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import io from "socket.io-client";
 
 // Import Constants
-import { BOARD_SIZES, SHOPS, TAUNT_TEXTS } from "./constants/game";
+import { BOARD_SIZES, rotateShape, SHOPS, TAUNT_TEXTS } from "./constants/game";
 
 // Import Audio Utilities
 import { apiUrl, SERVER_URL } from "./utils/api";
@@ -585,6 +585,69 @@ export default function App() {
       });
   };
 
+  // CHỐT ĐẶT QUÁN CỐ ĐỊNH THEO MA TRẬN XOAY 4 HƯỚNG
+  const handleConfirmPlaceShop = () => {
+    playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
+    if (previewIndex === null) return;
+
+    const currentShopObj =
+      activeShops.find((s) => s.id === selectedShop) || activeShops[0];
+    const shape = rotateShape(currentShopObj.shape || [[1]], rotation);
+    const rows = shape.length;
+    const cols = shape[0].length;
+
+    let startRow = Math.floor(previewIndex / gridSize);
+    let startCol = previewIndex % gridSize;
+
+    if (startCol + cols > gridSize) startCol = gridSize - cols;
+    if (startRow + rows > gridSize) startRow = gridSize - rows;
+
+    const indices = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (shape[r][c] === 1) {
+          indices.push((startRow + r) * gridSize + (startCol + c));
+        }
+      }
+    }
+
+    const isOverlap = indices.some(
+      (idx) => myBoard[idx] !== null && myBoard[idx].shopId !== selectedShop,
+    );
+
+    if (!isOverlap) {
+      const newBoard = myBoard.map((cell) =>
+        cell && cell.shopId === selectedShop ? null : cell,
+      );
+      indices.forEach((idx) => {
+        newBoard[idx] = {
+          shopId: currentShopObj.id,
+          icon: currentShopObj.icon,
+          name: currentShopObj.name,
+        };
+      });
+      setMyBoard(newBoard);
+      setPreviewIndex(null);
+
+      if (gameConfigRef.current.mode === "2v2") {
+        socket.emit("sync_team_board", {
+          roomId: roomIdRef.current,
+          board: newBoard,
+        });
+      }
+
+      // Tự chuyển sang chọn quán tiếp theo chưa đặt
+      const placedShopIds = new Set(
+        newBoard.filter(Boolean).map((c) => c.shopId),
+      );
+      const nextShop = activeShops.find((s) => !placedShopIds.has(s.id));
+      if (nextShop) {
+        setSelectedShop(nextShop.id);
+        setRotation(0);
+      }
+    }
+  };
+
   const handleReady = () => {
     const currentRoom = roomIdRef.current;
     if (!currentRoom) {
@@ -864,10 +927,12 @@ export default function App() {
                     setSelectedShop(id);
                     setRotation(0);
                   }}
-                  orientation="HORIZONTAL"
+                  rotation={rotation}
                   onRotate={handleRotate}
                   onResetBoard={handleResetBoard}
                   myBoard={myBoard}
+                  onConfirmPlaceShop={handleConfirmPlaceShop}
+                  isPreviewValid={previewIndex !== null}
                   onReady={handleReady}
                   onSendChat={handleSendChat}
                   messages={messages}

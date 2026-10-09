@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   SHOPS as DEFAULT_SHOPS,
   SHOP_OUTLINE,
@@ -12,10 +12,11 @@ export default function GameBoard({
   setMyBoard,
   opponentHits,
   selectedShop,
-  orientation, // Nhận từ BottomPanel (Được tận dụng làm Trigger Xoay)
+  rotation = 0, // Nhận góc xoay 0, 1, 2, 3 từ App.jsx
   previewIndex,
   setPreviewIndex,
   isMyTurn,
+  isMyTeamTurn,
   shotPending = false,
   onFireShot,
   recentShot,
@@ -25,17 +26,13 @@ export default function GameBoard({
   shops = DEFAULT_SHOPS,
   boardSize = 8,
   opponentAimingIndex,
+  aimingData,
   onAimShot,
+  team,
 }) {
   const isSetup = gameState === "SETUP";
   const isPlaying = gameState === "PLAYING";
   const [aimingIndex, setAimingIndex] = useState(null);
-
-  // Xử lý Xoay 4 hướng (0, 1, 2, 3) từ nút đổi Orientation của App.jsx
-  const [rot, setRot] = useState(0);
-  useEffect(() => {
-    if (isSetup) setRot((r) => (r + 1) % 4);
-  }, [orientation]);
 
   const currentShopObj = shops.find((s) => s.id === selectedShop) || shops[0];
   const cosmeticSlots = Object.fromEntries(
@@ -50,14 +47,15 @@ export default function GameBoard({
     return undefined;
   };
 
-  const getOccupiedIndices = (startIndex, shopObj, rotation) => {
+  // Tính tọa độ chiếm giữ chính xác theo Ma Trận Tetris Shape & Góc xoay
+  const getOccupiedIndices = (startIndex, shopObj, rotDegree) => {
     if (
       startIndex === null ||
       startIndex < 0 ||
       startIndex >= boardSize * boardSize
     )
       return null;
-    const shape = rotateShape(shopObj.shape || [[1]], rotation);
+    const shape = rotateShape(shopObj.shape || [[1]], rotDegree);
     const rows = shape.length;
     const cols = shape[0].length;
 
@@ -70,8 +68,9 @@ export default function GameBoard({
     const indices = [];
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
-        if (shape[r][c] === 1)
+        if (shape[r][c] === 1) {
           indices.push((startRow + r) * boardSize + (startCol + c));
+        }
       }
     }
     return indices;
@@ -86,19 +85,40 @@ export default function GameBoard({
 
   const previewIndices =
     isSetup && previewIndex !== null
-      ? getOccupiedIndices(previewIndex, currentShopObj, rot)
+      ? getOccupiedIndices(previewIndex, currentShopObj, rotation)
       : null;
   const isPreviewValid = checkPlacementValid(previewIndices);
 
+  // XỬ LÝ CLICK ĐẶT QUÁN CỐ ĐỊNH (KHÔNG DÍNH CHUỘT)
   const handleSetupCellClick = (index) => {
     if (!isSetup) return;
-    setPreviewIndex(index);
-    playSFX("pop.mp3", soundEnabled, 0.4);
-  };
 
-  const handlePointerEnter = (index) => {
-    if (!isSetup) return;
-    if (previewIndex !== null) setPreviewIndex(index);
+    // Nếu click lại ô đang xem trước (Preview) -> LƯU CỐ ĐỊNH
+    if (
+      previewIndex === index ||
+      (previewIndices && previewIndices.includes(index))
+    ) {
+      if (isPreviewValid && previewIndices) {
+        playSFX("pop.mp3", soundEnabled, 0.6);
+        const newBoard = myBoard.map((cell) =>
+          cell && cell.shopId === selectedShop ? null : cell,
+        );
+        previewIndices.forEach((idx) => {
+          newBoard[idx] = {
+            shopId: currentShopObj.id,
+            icon: currentShopObj.icon,
+            name: currentShopObj.name,
+          };
+        });
+        setMyBoard(newBoard);
+        setPreviewIndex(null);
+        return;
+      }
+    }
+
+    // Chọn vị trí xem trước cố định
+    playSFX("pop.mp3", soundEnabled, 0.4);
+    setPreviewIndex(index);
   };
 
   const handleOpponentCellClick = (index, status) => {
@@ -114,8 +134,10 @@ export default function GameBoard({
   };
 
   const isSunkExplosion = recentShot && recentShot.type === "SUNK";
+  const showingMyBoard = isSetup || (isPlaying && !isMyTeamTurn);
+  const activeBoard = showingMyBoard ? myBoard : opponentHits;
 
-  // Render Lưới Bàn Cờ (Tái sử dụng cho cả Nhà và Địch)
+  // Render Lưới Bàn Cờ
   const renderGrid = (boardData, isOpponentBoard) => (
     <div
       className="absolute inset-0 grid gap-px w-full h-full p-[8.5%]"
@@ -125,29 +147,31 @@ export default function GameBoard({
       }}
     >
       {boardData.map((cell, index) => {
-        // Biến dùng chung
         const isPreview = !isOpponentBoard && previewIndices?.includes(index);
         const isAiming = isOpponentBoard && aimingIndex === index;
         const isOpponentAimingHere =
-          !isOpponentBoard && opponentAimingIndex === index;
+          !isOpponentBoard &&
+          (opponentAimingIndex === index ||
+            (aimingData?.targetTeam === team &&
+              aimingData?.targetIndex === index));
         const hitStatus = isOpponentBoard ? cell : cell?.shot;
 
         return (
           <button
             key={index}
+            type="button"
             onClick={() =>
               isOpponentBoard
                 ? handleOpponentCellClick(index, hitStatus)
                 : handleSetupCellClick(index)
             }
-            onPointerEnter={() => !isOpponentBoard && handlePointerEnter(index)}
             disabled={
               isOpponentBoard &&
               (shotPending || aimingIndex !== null || hitStatus !== null)
             }
             className={`w-full h-full flex items-center justify-center relative border border-white/10 rounded-sm transition-all overflow-visible
               ${isOpponentBoard && hitStatus === null && !shotPending && aimingIndex === null && isMyTurn ? "hover:bg-yellow-400/20 cursor-pointer active:scale-90" : ""}
-              ${!isOpponentBoard && isPreview && isPreviewValid ? "bg-emerald-500/50 border-2 border-emerald-300 cursor-pointer" : ""}
+              ${!isOpponentBoard && isPreview && isPreviewValid ? "bg-emerald-500/50 border-2 border-emerald-300 cursor-pointer animate-pulse" : ""}
               ${!isOpponentBoard && isPreview && !isPreviewValid ? "bg-rose-500/50 border-2 border-rose-300 cursor-pointer" : ""}
               ${!isOpponentBoard && cell && cell.shopId ? `outline-solid outline-2 -outline-offset-2 ${SHOP_OUTLINE[cell.shopId] || "outline-yellow-400"}` : ""}
             `}
@@ -179,7 +203,7 @@ export default function GameBoard({
               />
             )}
 
-            {/* Kính ngắm của bạn trên sân địch */}
+            {/* Kính ngắm trên sân địch */}
             {isOpponentBoard && (hitStatus === null || isAiming) && (
               <img
                 src="/vitri.png"
@@ -217,7 +241,7 @@ export default function GameBoard({
                 </span>
               )}
 
-            {/* Taunt text chung */}
+            {/* Taunt text */}
             {showTaunt && recentShot && recentShot.index === index && (
               <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-40 pointer-events-none whitespace-nowrap animate-float-up">
                 <span
@@ -235,7 +259,7 @@ export default function GameBoard({
 
   return (
     <div className="flex flex-col md:flex-row gap-6 md:gap-10 w-full h-full items-center justify-center p-2">
-      {/* KHUNG BÀN CỜ SÂN NHÀ */}
+      {/* BÀN CỜ SÂN NHÀ */}
       <div
         className={`relative aspect-square w-full max-w-[24rem] xl:max-w-lg bg-slate-900 rounded-2xl p-1 shadow-2xl border-2 border-slate-700 transition-all duration-500
         ${isPlaying && isMyTurn ? "hidden md:block opacity-40 scale-95" : "block opacity-100 scale-100"} 
@@ -251,7 +275,7 @@ export default function GameBoard({
         />
         {renderGrid(myBoard, false)}
 
-        {/* Tọa độ (Ngắn gọn) */}
+        {/* Tọa độ ngang */}
         <div
           aria-hidden="true"
           className="absolute grid pointer-events-none text-[9px] font-black text-amber-200"
@@ -269,6 +293,7 @@ export default function GameBoard({
             </span>
           ))}
         </div>
+        {/* Tọa độ dọc */}
         <div
           aria-hidden="true"
           className="absolute grid pointer-events-none text-[9px] font-black text-amber-200"
@@ -292,12 +317,13 @@ export default function GameBoard({
             <img
               src="/explosion.gif"
               className="w-[200%] h-[200%] max-w-none opacity-95"
+              alt="Boom"
             />
           </div>
         )}
       </div>
 
-      {/* KHUNG BÀN CỜ ĐỐI THỦ (Chỉ hiện khi PLAYING) */}
+      {/* BÀN CỜ ĐỐI THỦ */}
       {isPlaying && (
         <div
           className={`relative aspect-square w-full max-w-[24rem] xl:max-w-lg bg-slate-900 rounded-2xl p-1 shadow-2xl border-2 border-slate-700 transition-all duration-500
@@ -314,7 +340,6 @@ export default function GameBoard({
           />
           {renderGrid(opponentHits, true)}
 
-          {/* Tọa độ */}
           <div
             aria-hidden="true"
             className="absolute grid pointer-events-none text-[9px] font-black text-amber-200"
@@ -355,6 +380,7 @@ export default function GameBoard({
               <img
                 src="/explosion.gif"
                 className="w-[200%] h-[200%] max-w-none opacity-95"
+                alt="Boom"
               />
             </div>
           )}

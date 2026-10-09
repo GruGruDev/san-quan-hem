@@ -5,7 +5,7 @@ export default function BottomPanel({
   gameState,
   selectedShop,
   onSelectShop,
-  orientation,
+  rotation = 0, // Nhận góc xoay 0, 1, 2, 3 từ App.jsx
   onRotate,
   onResetBoard,
   myBoard,
@@ -15,7 +15,7 @@ export default function BottomPanel({
   onSendChat,
   messages = [],
   shops = DEFAULT_SHOPS,
-  showChatToggle = false, // Prop mới từ App.jsx để bật/tắt nút kênh Chat
+  showChatToggle = false,
 }) {
   const [chatInput, setChatInput] = useState("");
   const [chatType, setChatType] = useState("ALL"); // ALL | TEAM
@@ -42,8 +42,11 @@ export default function BottomPanel({
   const placedShopIds = new Set(myBoard.filter(Boolean).map((c) => c.shopId));
   const isAllPlaced = shops.every((s) => placedShopIds.has(s.id));
 
+  // Tên góc xoay hiển thị trên nút
+  const rotationDegrees = ["0°", "90°", "180°", "270°"];
+
   return (
-    <div className="w-full max-w-md md:max-w-full bg-slate-900 p-3 border-t border-slate-800 flex flex-col gap-2.5 rounded-b-2xl md:rounded-bl-3xl md:rounded-br-none">
+    <div className="w-full max-w-md md:max-w-full bg-slate-900 p-3 border-t border-slate-800 flex flex-col gap-2.5 rounded-b-2xl md:rounded-bl-3xl md:rounded-br-none select-none">
       {isSetup && (
         <div className="flex flex-col gap-2">
           {/* Thanh Chọn Quán Tinh Gọn */}
@@ -55,6 +58,7 @@ export default function BottomPanel({
               return (
                 <button
                   key={shop.id}
+                  type="button"
                   onClick={() => onSelectShop(shop.id)}
                   className={`relative w-10 h-10 shrink-0 rounded-xl p-1 flex items-center justify-center transition border-2 ${
                     isSelected
@@ -67,7 +71,7 @@ export default function BottomPanel({
                   <img
                     src={shop.icon}
                     alt={shop.name}
-                    className="w-full h-full object-contain"
+                    className="w-full h-full object-contain pointer-events-none"
                   />
                   <span className="absolute -bottom-1 -right-1 bg-slate-950 text-amber-400 border border-slate-700 text-[10px] font-black px-1.5 py-0.5 rounded-full">
                     {shop.size}
@@ -86,14 +90,17 @@ export default function BottomPanel({
             {/* Cụm Nút Xoay / Reset */}
             <div className="flex gap-1">
               <button
+                type="button"
                 onClick={onRotate}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs px-3 py-2.5 rounded-xl shadow active:scale-95 transition flex items-center gap-1"
+                className="bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-black text-xs px-3 py-2.5 rounded-xl shadow transition flex items-center gap-1"
               >
-                🔄 {orientation === "HORIZONTAL" ? "NGANG" : "DỌC"}
+                🔄 XOAY ({rotationDegrees[rotation % 4]})
               </button>
               <button
+                type="button"
                 onClick={onResetBoard}
-                className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs p-2.5 rounded-xl active:scale-95 transition"
+                className="bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 font-bold text-xs p-2.5 rounded-xl transition"
+                title="Xếp lại toàn bộ"
               >
                 ↩️
               </button>
@@ -102,18 +109,20 @@ export default function BottomPanel({
 
           {!isAllPlaced ? (
             <button
+              type="button"
               onClick={onConfirmPlaceShop}
               disabled={!isPreviewValid}
               className="w-full bg-linear-to-r from-amber-500 to-yellow-500 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 font-black py-3 rounded-xl shadow-lg active:scale-95 transition text-xs uppercase tracking-wider"
             >
-              📌 ĐẶT {currentShopObj.name.toUpperCase()}
+              📌 ĐẶT {currentShopObj.name.toUpperCase()} CỐ ĐỊNH
             </button>
           ) : (
             <button
+              type="button"
               onClick={onReady}
               className="w-full bg-linear-to-r from-emerald-500 to-teal-600 hover:brightness-110 text-white font-black py-3.5 rounded-xl shadow-lg active:scale-95 transition text-sm uppercase tracking-wider animate-pulse"
             >
-              🚀 ĐÃ XẾP XONG QUÁN!
+              🚀 SẴN SÀNG VÀO TRẬN!
             </button>
           )}
         </div>

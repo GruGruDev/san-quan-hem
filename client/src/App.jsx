@@ -149,6 +149,7 @@ export default function App() {
   const [gameId, setGameId] = useState(null);
   const [turnTimeLeft, setTurnTimeLeft] = useState(25);
   const [surrenderVote, setSurrenderVote] = useState(null);
+  const [turnBanner, setTurnBanner] = useState(null);
 
   const [messages, setMessages] = useState([]);
   const [showSettings, setShowSettings] = useState(false);
@@ -236,8 +237,9 @@ export default function App() {
     else if (gameState === "FINISHED") stopBGM();
   }, [gameState, soundEnabled, bgmVolume]);
 
+  // PHÁT SOUND KHI ĐẾM TỚI 10S NHƯ YÊU CẦU
   useEffect(() => {
-    if (gameState === "PLAYING" && turnTimeLeft === 5)
+    if (gameState === "PLAYING" && turnTimeLeft === 10)
       playSFX("TurnTimer.mp3", soundEnabled, sfxVolume);
   }, [gameState, turnTimeLeft, soundEnabled, sfxVolume]);
 
@@ -250,6 +252,19 @@ export default function App() {
       );
     return () => clearInterval(timer);
   }, [gameState, turnTimeLeft]);
+
+  // ANIMATION BANNER LƯỢT ĐI
+  useEffect(() => {
+    if (gameState === "PLAYING") {
+      let text = "🛡️ LƯỢT ĐỐI THỦ!";
+      if (isMyTurn) text = "💥 ĐẾN LƯỢT BẠN!";
+      else if (isMyTeamTurn) text = "🤝 LƯỢT ĐỒNG ĐỘI!";
+
+      setTurnBanner(text);
+      const t = setTimeout(() => setTurnBanner(null), 2500);
+      return () => clearTimeout(t);
+    }
+  }, [isMyTurn, isMyTeamTurn, gameState]);
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -585,7 +600,6 @@ export default function App() {
       });
   };
 
-  // CHỐT ĐẶT QUÁN CỐ ĐỊNH THEO MA TRẬN XOAY 4 HƯỚNG
   const handleConfirmPlaceShop = () => {
     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
     if (previewIndex === null) return;
@@ -636,7 +650,6 @@ export default function App() {
         });
       }
 
-      // Tự chuyển sang chọn quán tiếp theo chưa đặt
       const placedShopIds = new Set(
         newBoard.filter(Boolean).map((c) => c.shopId),
       );
@@ -760,9 +773,7 @@ export default function App() {
   return (
     <div className="flex h-dvh w-full flex-col bg-slate-950 font-sans text-white md:p-2 overflow-hidden">
       <div
-        className={`relative flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-slate-900 transition-all duration-500 md:rounded-2xl md:border-2 md:border-slate-800 md:shadow-2xl ${
-          gameState === "LOBBY" ? "" : ""
-        }`}
+        className={`relative flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-slate-900 transition-all duration-500 md:rounded-2xl md:border-2 md:border-slate-800 md:shadow-2xl`}
       >
         {gameState === "LOBBY" ? (
           <>
@@ -834,7 +845,7 @@ export default function App() {
             )}
 
             <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-slate-950">
-              {/* CỘT TRÁI: Roster + HUD + BottomPanel */}
+              {/* CỘT TRÁI: Roster + Controls */}
               <div className="w-full md:w-80 lg:w-96 flex flex-col border-r border-slate-800 shrink-0 min-h-0 overflow-y-auto">
                 {(gameState === "SETUP" || mode === "2v2") && (
                   <div className="p-2 sm:p-3 pb-0">
@@ -851,70 +862,6 @@ export default function App() {
                       }
                       onSwapTeams={handleSwapTeams}
                     />
-                  </div>
-                )}
-                {gameState === "PLAYING" && (
-                  <div className="p-2 sm:p-3 shrink-0">
-                    <div className="w-full bg-slate-900/90 border border-slate-800 rounded-2xl p-2.5 flex justify-between items-center shadow-xl animate-fade-in">
-                      <div className="flex flex-col gap-1">
-                        <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider">
-                          🏠 ĐỘI BẠN
-                        </span>
-                        <div className="flex flex-wrap gap-1.5 max-w-30">
-                          {activeShops.map((s, idx) => {
-                            const health = getShopHealth(s.id);
-                            return (
-                              <div
-                                key={`my-hud-${s.id}-${idx}`}
-                                className={`relative w-8 h-8 rounded-lg p-0.5 border flex items-center justify-center transition-all ${health.isSunk ? "bg-red-950/70 border-red-700 opacity-40 grayscale" : "bg-slate-800 border-slate-700 shadow"}`}
-                              >
-                                <img
-                                  src={s.icon}
-                                  className="w-full h-full object-contain"
-                                  alt={s.name}
-                                />
-                                {!health.isSunk && health.total > 0 && (
-                                  <span className="absolute -bottom-1 -right-1 bg-slate-950 text-emerald-400 border border-emerald-800 text-[9px] font-black px-1 rounded-full">
-                                    {health.alive}
-                                  </span>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                      <div className="text-xs font-black text-slate-600 px-1">
-                        VS
-                      </div>
-                      <div className="flex flex-col items-end gap-1">
-                        <span className="text-[10px] font-black text-rose-400 uppercase tracking-wider">
-                          🎯 ĐỘI ĐỊCH
-                        </span>
-                        <div className="flex flex-wrap justify-end gap-1.5 max-w-30">
-                          {activeShops.map((s, idx) => (
-                            <div
-                              key={`opp-hud-${s.id}-${idx}`}
-                              className={`relative w-8 h-8 rounded-lg p-0.5 border flex items-center justify-center text-xs font-bold shadow ${opponentSunkShops.includes(s.id) ? "bg-red-950/70 border-red-700 opacity-50 grayscale" : "bg-slate-800/80 border-slate-700/80 text-slate-400"}`}
-                            >
-                              {opponentSunkShops.includes(s.id) ? (
-                                <>
-                                  <img
-                                    src={s.icon}
-                                    className="h-full w-full object-contain"
-                                    alt={s.name}
-                                  />
-                                  <span className="absolute inset-0 flex items-center justify-center text-xs font-black text-red-500">
-                                    ✖
-                                  </span>
-                                </>
-                              ) : (
-                                "❓"
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
                   </div>
                 )}
 
@@ -940,7 +887,7 @@ export default function App() {
                 />
               </div>
 
-              {/* CỘT PHẢI: GameBoard */}
+              {/* CỘT PHẢI: TACTICAL MAIN ARENA */}
               <main className="flex-1 p-2 md:p-6 flex items-center justify-center relative overflow-hidden bg-slate-950 min-h-0">
                 <GameBoard
                   gameState={gameState}
@@ -984,6 +931,17 @@ export default function App() {
                 />
               </main>
             </div>
+
+            {/* BANNER HIỆN LƯỢT ĐI */}
+            {turnBanner && (
+              <div className="absolute inset-0 z-100 flex items-center justify-center pointer-events-none transition-opacity duration-300">
+                <div className="w-full bg-gradient-to-r from-transparent via-amber-600/90 to-transparent py-8 flex items-center justify-center shadow-[0_0_40px_rgba(245,158,11,0.4)]">
+                  <h2 className="text-4xl md:text-6xl font-black text-white drop-shadow-[0_4px_10px_rgba(0,0,0,0.8)] tracking-widest uppercase animate-pop-in text-center">
+                    {turnBanner}
+                  </h2>
+                </div>
+              </div>
+            )}
 
             {coinFlipResult && (
               <CoinFlipOverlay
@@ -1109,7 +1067,7 @@ export default function App() {
 
         {/* CUSTOM TOAST */}
         {customAlert.show && (
-          <div className="absolute inset-0 z-100 flex items-center justify-center bg-black/70 p-5 backdrop-blur-sm">
+          <div className="absolute inset-0 z-[110] flex items-center justify-center bg-black/70 p-5 backdrop-blur-sm">
             <div className="bg-slate-900 border-2 border-slate-700 rounded-3xl p-6 shadow-2xl w-full max-w-sm animate-fade-in flex flex-col items-center text-center">
               <div className="text-5xl mb-3 drop-shadow-md">
                 {customAlert.type === "error"

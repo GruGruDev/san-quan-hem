@@ -152,11 +152,11 @@ export default function LobbyScreen({
             </div>
 
             <h2 className="text-2xl font-black text-amber-200 tracking-wide uppercase drop-shadow">
-              ĐẠI CHIẾN ĂN VẶT 2V2
+              ĐẠI CHIẾN ĂN VẶT
             </h2>
             <p className="text-xs md:text-sm text-amber-100/80 leading-relaxed font-medium">
               Thưởng thức ly trà sữa, đĩa cá viên chiên và cùng đồng đội giăng
-              bẫy đối thủ trên bàn cờ khổng lồ 12x12!
+              bẫy đối thủ trên địa bàn!
             </p>
           </div>
 

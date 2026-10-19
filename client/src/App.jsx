@@ -20,7 +20,7 @@ import ResultScreen from "./components/ResultScreen";
 import RoomRoster from "./components/RoomRoster";
 import SearchingScreen from "./components/SearchingScreen";
 import SocialHub from "./components/SocialHub";
-
+import ChatBox from "./components/ChatBox";
 // Import Modals
 import AuthModal from "./components/Modals/AuthModal";
 import DonateModal from "./components/Modals/DonateModal";
@@ -252,7 +252,6 @@ export default function App() {
     return () => clearInterval(timer);
   }, [gameState, turnTimeLeft]);
 
-  // ANIMATION BANNER LƯỢT ĐI (Đã thêm check mode === '2v2')
   useEffect(() => {
     if (gameState === "PLAYING") {
       let text = "🛡️ LƯỢT ĐỐI THỦ!";
@@ -412,8 +411,6 @@ export default function App() {
       const randomText = textList[Math.floor(Math.random() * textList.length)];
       setRecentShot({ index: data.targetIndex, type, text: randomText });
 
-      // ĐÃ XÓA `setCurrentTurnId` Ở ĐÂY ĐỂ TRÁNH LỖI LẬT BÀN CỜ TRƯỚC KHI NỔ XONG!
-
       if (data.targetTeam !== gameConfigRef.current.team) {
         setOpponentHits((prev) => {
           const next = [...prev];
@@ -434,7 +431,6 @@ export default function App() {
         });
       }
 
-      // ĐỢI NỔ XONG MỚI ĐỔI LƯỢT + LẬT BÀN CỜ
       setTimeout(() => {
         setRecentShot(null);
         if (data.shooterId === socket.id) {
@@ -442,10 +438,8 @@ export default function App() {
           setShotPending(false);
         }
 
-        // CHUYỂN VÀO TRONG TIMEOUT ĐỂ TRÁNH RACE CONDITION
         setCurrentTurnId(data.nextTurnId);
         setIsMyTurn(data.nextTurnId === socket.id);
-
         setTurnTimeLeft(25);
       }, 1500);
     });
@@ -762,24 +756,12 @@ export default function App() {
     );
   };
 
-  const getShopHealth = (shopId) => {
-    const shopCells = myBoard.filter((cell) => cell && cell.shopId === shopId);
-    const aliveCells = shopCells.filter((cell) => cell.shot !== "HIT");
-    return {
-      total: shopCells.length,
-      alive: aliveCells.length,
-      isSunk: shopCells.length > 0 && aliveCells.length === 0,
-    };
-  };
-
   if (appLoading)
     return <LoadingScreen onFinish={() => setAppLoading(false)} />;
 
   return (
-    <div className="flex h-dvh w-full flex-col bg-slate-950 font-sans text-white md:p-2 overflow-hidden">
-      <div
-        className={`relative flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-slate-900 transition-all duration-500 md:rounded-2xl md:border-2 md:border-slate-800 md:shadow-2xl`}
-      >
+    <div className="flex h-dvh w-full flex-col bg-slate-950 font-sans text-white md:p-2 overflow-hidden select-none">
+      <div className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-slate-900 transition-all duration-500 md:rounded-2xl md:border-2 md:border-slate-800 md:shadow-2xl">
         {gameState === "LOBBY" ? (
           <>
             <LobbyScreen
@@ -827,13 +809,15 @@ export default function App() {
             )}
           </>
         ) : (
-          <div className="flex flex-col w-full h-full">
+          /* ================= GIAI ĐOẠN TRẬN ĐẤU (MOBILE & DESKTOP COLLAB) ================= */
+          <div className="flex flex-col w-full h-full overflow-hidden bg-slate-950">
+            {/* 1. HEADER (CỐ ĐỊNH Ở ĐẦU) */}
             <Header
               team={team}
               playerName={currentUser?.displayName || playerName}
               isMyTurn={isMyTurn}
-              isMyTeamTurn={isMyTeamTurn} // TRUYỀN THÊM PROP NÀY CHO HEADER
-              mode={mode} // TRUYỀN THÊM MODE CHO HEADER
+              isMyTeamTurn={isMyTeamTurn}
+              mode={mode}
               gameState={gameState}
               turnTimeLeft={turnTimeLeft}
               onOpenSettings={() => {
@@ -842,6 +826,8 @@ export default function App() {
               }}
               onSurrender={handleSurrender}
             />
+
+            {/* CẢNH BÁO LỖI KẾT NỐI */}
             {connectionError && (
               <p
                 role="status"
@@ -851,11 +837,12 @@ export default function App() {
               </p>
             )}
 
-            <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-slate-950">
-              {/* CỘT TRÁI: Roster + Controls */}
-              <div className="w-full md:w-80 lg:w-96 flex flex-col border-r border-slate-800 shrink-0 min-h-0 overflow-y-auto">
+            {/* 2. BODY CHÍNH (CỘT RƠI / BÀN CỜ) */}
+            <div className="flex-1 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden bg-slate-950">
+              {/* KHU VỰC ROSTER & KHO QUÁN (NẰM TRÊN BÀN CỜ) */}
+              <div className="w-full md:w-80 lg:w-96 flex flex-col border-b md:border-b-0 md:border-r border-slate-800 shrink-0">
                 {(gameState === "SETUP" || mode === "2v2") && (
-                  <div className="p-2 sm:p-3 pb-0">
+                  <div className="p-2 pb-0">
                     <RoomRoster
                       players={roomPlayers}
                       currentSocketId={socket.id}
@@ -872,6 +859,7 @@ export default function App() {
                   </div>
                 )}
 
+                {/* KHO QUÁN ĐẶT Ở ĐÂY */}
                 <BottomPanel
                   gameState={gameState}
                   selectedShop={selectedShop}
@@ -887,15 +875,12 @@ export default function App() {
                   onConfirmPlaceShop={handleConfirmPlaceShop}
                   isPreviewValid={previewIndex !== null}
                   onReady={handleReady}
-                  onSendChat={handleSendChat}
-                  messages={messages}
                   shops={activeShops}
-                  showChatToggle={mode === "2v2"}
                 />
               </div>
 
-              {/* CỘT PHẢI: TACTICAL MAIN ARENA */}
-              <main className="flex-1 p-2 md:p-6 flex items-center justify-center relative overflow-hidden bg-slate-950 min-h-0">
+              {/* BÀN CỜ GAMEBOARD (NẰM GIỮA) */}
+              <main className="flex-1 p-2 md:p-6 flex items-center justify-center relative overflow-hidden bg-slate-950 min-h-[350px]">
                 <GameBoard
                   gameState={gameState}
                   myBoard={myBoard}
@@ -939,48 +924,12 @@ export default function App() {
               </main>
             </div>
 
-            {/* BANNER HIỆN LƯỢT ĐI */}
-            {turnBanner && (
-              <div className="absolute inset-0 z-100 flex items-center justify-center pointer-events-none transition-opacity duration-300">
-                <div className="w-full bg-gradient-to-r from-transparent via-amber-600/90 to-transparent py-8 flex items-center justify-center shadow-[0_0_40px_rgba(245,158,11,0.4)]">
-                  <h2 className="text-4xl md:text-6xl font-black text-white drop-shadow-[0_4px_10px_rgba(0,0,0,0.8)] tracking-widest uppercase animate-pop-in text-center">
-                    {turnBanner}
-                  </h2>
-                </div>
-              </div>
-            )}
-
-            {coinFlipResult && (
-              <CoinFlipOverlay
-                result={coinFlipResult}
-                isTeamMode={mode === "2v2"}
-                onComplete={() => {
-                  setCoinFlipResult(null);
-                  setGameState("PLAYING");
-                }}
-              />
-            )}
-            {surrenderVote && (
-              <SurrenderVoteModal
-                initiatorName={surrenderVote.initiatorName}
-                onVote={handleSurrenderVote}
-              />
-            )}
-            {gameState === "FINISHED" && (
-              <ResultScreen
-                isWinner={winner === team}
-                gameId={gameId}
-                canReport={Boolean(currentUser)}
-                opponents={roomPlayers.filter((player) => player.team !== team)}
-                onReport={handleReportMatch}
-                winnerBoards={winnerBoards}
-                shops={activeShops}
-                boardSize={gridSize}
-                equippedCosmetics={currentUser?.equippedCosmetics || []}
-                onRematch={handleRematch}
-                onLeave={handleLeaveRoom}
-              />
-            )}
+            {/* 3. KHUNG CHAT (NẰM CỐ ĐỊNH Ở ĐÁY CÙNG MÀN HÌNH) */}
+            <ChatBox
+              onSendChat={handleSendChat}
+              messages={messages}
+              showChatToggle={mode === "2v2"}
+            />
           </div>
         )}
 

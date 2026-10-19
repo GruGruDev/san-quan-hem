@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export default function CoinFlipOverlay({
   result,
@@ -7,26 +7,32 @@ export default function CoinFlipOverlay({
 }) {
   const [flipping, setFlipping] = useState(true);
   const isFirst = result === "FIRST";
+  const completedRef = useRef(false);
 
   useEffect(() => {
-    // 1. Chạy animation tung xu 3s
+    // 1. Sau 2.5 giây dừng lật và hiển thị mặt đồng xu kết quả
     const flipTimer = setTimeout(() => {
       setFlipping(false);
+    }, 2500);
 
-      // 2. Chờ 1.2s cho người chơi xem rõ mặt đồng xu & thông báo kết quả
-      const finishTimer = setTimeout(() => {
+    // 2. Chờ thêm 1.5 giây cho người chơi đọc kết quả rồi đóng Overlay an toàn
+    const finishTimer = setTimeout(() => {
+      if (!completedRef.current) {
+        completedRef.current = true;
         if (onComplete) onComplete();
-      }, 1200);
+      }
+    }, 4000);
 
-      return () => clearTimeout(finishTimer);
-    }, 3000);
-
-    return () => clearTimeout(flipTimer);
+    // Dọn dẹp bộ đếm thời gian khi unmount
+    return () => {
+      clearTimeout(flipTimer);
+      clearTimeout(finishTimer);
+    };
   }, [onComplete]);
 
   return (
-    <div className="absolute inset-0 z-50 bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-fade-in select-none">
-      {/* Vòng tròn spinner đếm ngược bao quanh */}
+    <div className="absolute inset-0 z-[150] bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-fade-in select-none">
+      {/* Vòng quay spinner bao quanh */}
       {flipping && (
         <div className="absolute w-44 h-44 rounded-full border-4 border-slate-800 animate-spin-slow pointer-events-none">
           <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-amber-400 border-r-yellow-400" />
@@ -36,7 +42,7 @@ export default function CoinFlipOverlay({
       {/* Đồng xu Lật 3D */}
       <div className="relative w-32 h-32 perspective-[1000px] mb-6">
         <div
-          className={`coin w-full h-full rounded-full shadow-2xl shadow-yellow-500/20 ${
+          className={`coin w-full h-full rounded-full shadow-2xl shadow-amber-500/20 ${
             flipping ? "flip" : ""
           }`}
           style={{
@@ -47,13 +53,13 @@ export default function CoinFlipOverlay({
               : undefined,
           }}
         >
-          {/* Mặt Trước (Người chơi đi trước) */}
-          <div className="front bg-linear-to-tr from-amber-600 via-yellow-400 to-amber-200 border-4 border-yellow-300 flex items-center justify-center text-5xl font-bold shadow-inner">
+          {/* Mặt Trước (Đội nhà đi trước) */}
+          <div className="front bg-gradient-to-tr from-amber-600 via-yellow-400 to-amber-200 border-4 border-amber-300 flex items-center justify-center text-5xl font-bold shadow-inner">
             👑
           </div>
 
           {/* Mặt Sau (Đối thủ đi trước) */}
-          <div className="back bg-linear-to-tr from-blue-600 via-indigo-400 to-purple-500 border-4 border-cyan-300 flex items-center justify-center text-5xl font-bold shadow-inner">
+          <div className="back bg-gradient-to-tr from-blue-600 via-indigo-500 to-purple-600 border-4 border-cyan-300 flex items-center justify-center text-5xl font-bold shadow-inner">
             🛡️
           </div>
         </div>
@@ -63,7 +69,7 @@ export default function CoinFlipOverlay({
       <div className="flex flex-col items-center gap-2 z-10">
         {flipping ? (
           <>
-            <h2 className="text-2xl font-black text-yellow-400 tracking-wider uppercase drop-shadow animate-pulse">
+            <h2 className="text-2xl font-black text-amber-400 tracking-wider uppercase drop-shadow animate-pulse">
               ĐANG QUAY ĐỒNG XU...
             </h2>
             <p className="text-xs text-slate-300 font-medium">
@@ -81,14 +87,14 @@ export default function CoinFlipOverlay({
                 ? `🎉 ${isTeamMode ? "ĐỘI BẠN" : "BẠN"} ĐƯỢC BẮN TRƯỚC!`
                 : `🛡️ ${isTeamMode ? "ĐỘI ĐỐI THỦ" : "ĐỐI THỦ"} ĐƯỢC BẮN TRƯỚC!`}
             </h2>
-            <p className="text-xs text-slate-200 font-bold bg-slate-800/80 px-4 py-1.5 rounded-full border border-slate-700 shadow-lg">
+            <p className="text-xs text-slate-200 font-bold bg-slate-900/90 px-4 py-1.5 rounded-full border border-slate-700 shadow-lg">
               {isFirst ? "Xả đạn ngay lập tức!" : "Hãy chuẩn bị phòng thủ!"}
             </p>
           </div>
         )}
       </div>
 
-      {/* Custom Keyframes CSS */}
+      {/* Custom Styles */}
       <style>{`
         @keyframes coinFlip {
           0% { transform: rotateY(0deg); }

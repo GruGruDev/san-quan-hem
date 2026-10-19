@@ -10,6 +10,7 @@ import { playBGM, playSFX, stopBGM } from "./utils/sound";
 
 // Import Components
 import BottomPanel from "./components/BottomPanel";
+import ChatBox from "./components/ChatBox"; // ĐÃ THÊM IMPORT CHATBOX
 import CoinFlipOverlay from "./components/CoinFlipOverlay";
 import GameBoard from "./components/GameBoard";
 import Header from "./components/Header";
@@ -20,7 +21,7 @@ import ResultScreen from "./components/ResultScreen";
 import RoomRoster from "./components/RoomRoster";
 import SearchingScreen from "./components/SearchingScreen";
 import SocialHub from "./components/SocialHub";
-import ChatBox from "./components/ChatBox";
+
 // Import Modals
 import AuthModal from "./components/Modals/AuthModal";
 import DonateModal from "./components/Modals/DonateModal";
@@ -113,6 +114,8 @@ export default function App() {
   const [roomHostSocketId, setRoomHostSocketId] = useState(null);
   const [roomLobbyStatus, setRoomLobbyStatus] = useState(null);
   const [connectionError, setConnectionError] = useState("");
+  const [isReadySent, setIsReadySent] = useState(false);
+
   const gameConfigRef = useRef({ gridSize, team, mode });
   useEffect(() => {
     gameConfigRef.current = { gridSize, team, mode };
@@ -291,6 +294,7 @@ export default function App() {
     setGameId(null);
     setTurnTimeLeft(25);
     setSurrenderVote(null);
+    setIsReadySent(false);
   };
 
   useEffect(() => {
@@ -395,6 +399,7 @@ export default function App() {
       setCurrentTurnId(data.firstTurnId);
       setIsMyTurn(data.firstTurnId === socket.id);
       setTurnTimeLeft(25);
+      // ĐÃ XÓA setGameState("PLAYING") Ở ĐÂY ĐỂ TRÁNH RENDER LƯỢT ĐI TRƯỚC KHI XOAY XONG!
     });
 
     socket.on("shot_result", (data) => {
@@ -672,6 +677,8 @@ export default function App() {
       return;
     }
     playSFX("pop.mp3", soundEnabled, sfxVolume * 0.6);
+    setIsReadySent(true); // KHÓA NÚT CHỐT SƠ ĐỒ NGAY LẬP TỨC
+
     socket.emit("ready_place_shops", {
       roomId: currentRoom,
       playerBoard: myBoard,
@@ -761,7 +768,7 @@ export default function App() {
 
   return (
     <div className="flex h-dvh w-full flex-col bg-slate-950 font-sans text-white md:p-2 overflow-hidden select-none">
-      <div className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-slate-900 transition-all duration-500 md:rounded-2xl md:border-2 md:border-slate-800 md:shadow-2xl">
+      <div className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-slate-900 md:rounded-2xl md:border-2 md:border-slate-800 md:shadow-2xl">
         {gameState === "LOBBY" ? (
           <>
             <LobbyScreen
@@ -809,9 +816,9 @@ export default function App() {
             )}
           </>
         ) : (
-          /* ================= GIAI ĐOẠN TRẬN ĐẤU (MOBILE & DESKTOP COLLAB) ================= */
+          /* ================= GIAI ĐOẠN TRẬN ĐẤU CÓ TÍCH HỢP CHATBOX Ở ĐÁY CÙNG ================= */
           <div className="flex flex-col w-full h-full overflow-hidden bg-slate-950">
-            {/* 1. HEADER (CỐ ĐỊNH Ở ĐẦU) */}
+            {/* 1. HEADER (CỐ ĐỊNH TRÊN CÙNG) */}
             <Header
               team={team}
               playerName={currentUser?.displayName || playerName}
@@ -837,9 +844,9 @@ export default function App() {
               </p>
             )}
 
-            {/* 2. BODY CHÍNH (CỘT RƠI / BÀN CỜ) */}
+            {/* 2. KHU VỰC THỰC THI (ROSTER + KHO QUÁN VÀ BÀN CỜ) */}
             <div className="flex-1 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden bg-slate-950">
-              {/* KHU VỰC ROSTER & KHO QUÁN (NẰM TRÊN BÀN CỜ) */}
+              {/* KHU VỰC ROSTER & KHO QUÁN (TRÊN BÀN CỜ HOẶC BÊN TRÁI DESKTOP) */}
               <div className="w-full md:w-80 lg:w-96 flex flex-col border-b md:border-b-0 md:border-r border-slate-800 shrink-0">
                 {(gameState === "SETUP" || mode === "2v2") && (
                   <div className="p-2 pb-0">
@@ -859,7 +866,7 @@ export default function App() {
                   </div>
                 )}
 
-                {/* KHO QUÁN ĐẶT Ở ĐÂY */}
+                {/* KHO QUÁN BẢNG ĐIỀU KHIỂN (Đã bỏ Chat ra khỏi đây) */}
                 <BottomPanel
                   gameState={gameState}
                   selectedShop={selectedShop}
@@ -875,11 +882,12 @@ export default function App() {
                   onConfirmPlaceShop={handleConfirmPlaceShop}
                   isPreviewValid={previewIndex !== null}
                   onReady={handleReady}
+                  isReadySent={isReadySent}
                   shops={activeShops}
                 />
               </div>
 
-              {/* BÀN CỜ GAMEBOARD (NẰM GIỮA) */}
+              {/* BÀN CỜ GAMEBOARD (NẰM GIỮA MÀN HÌNH) */}
               <main className="flex-1 p-2 md:p-6 flex items-center justify-center relative overflow-hidden bg-slate-950 min-h-[350px]">
                 <GameBoard
                   gameState={gameState}
@@ -924,12 +932,55 @@ export default function App() {
               </main>
             </div>
 
-            {/* 3. KHUNG CHAT (NẰM CỐ ĐỊNH Ở ĐÁY CÙNG MÀN HÌNH) */}
+            {/* 3. KHUNG CHATBOX TÍCH HỢP NẰM CỐ ĐỊNH Ở ĐÁY CÙNG MÀN HÌNH */}
             <ChatBox
               onSendChat={handleSendChat}
               messages={messages}
               showChatToggle={mode === "2v2"}
             />
+
+            {/* BANNER HIỆN LƯỢT ĐI */}
+            {turnBanner && (
+              <div className="absolute inset-0 z-100 flex items-center justify-center pointer-events-none transition-opacity duration-300">
+                <div className="w-full bg-gradient-to-r from-transparent via-amber-600/90 to-transparent py-8 flex items-center justify-center shadow-[0_0_40px_rgba(245,158,11,0.4)]">
+                  <h2 className="text-4xl md:text-6xl font-black text-white drop-shadow-[0_4px_10px_rgba(0,0,0,0.8)] tracking-widest uppercase animate-pop-in text-center">
+                    {turnBanner}
+                  </h2>
+                </div>
+              </div>
+            )}
+
+            {coinFlipResult && (
+              <CoinFlipOverlay
+                result={coinFlipResult}
+                isTeamMode={mode === "2v2"}
+                onComplete={() => {
+                  setCoinFlipResult(null);
+                  setGameState("PLAYING");
+                }}
+              />
+            )}
+            {surrenderVote && (
+              <SurrenderVoteModal
+                initiatorName={surrenderVote.initiatorName}
+                onVote={handleSurrenderVote}
+              />
+            )}
+            {gameState === "FINISHED" && (
+              <ResultScreen
+                isWinner={winner === team}
+                gameId={gameId}
+                canReport={Boolean(currentUser)}
+                opponents={roomPlayers.filter((player) => player.team !== team)}
+                onReport={handleReportMatch}
+                winnerBoards={winnerBoards}
+                shops={activeShops}
+                boardSize={gridSize}
+                equippedCosmetics={currentUser?.equippedCosmetics || []}
+                onRematch={handleRematch}
+                onLeave={handleLeaveRoom}
+              />
+            )}
           </div>
         )}
 
